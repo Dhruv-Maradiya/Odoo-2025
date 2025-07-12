@@ -96,7 +96,7 @@ export function QuestionCard({ question }: QuestionCardProps) {
                   {/* Meta Info */}
                   <div className="flex items-center justify-start gap-2 text-muted-foreground">
                     <div
-                      className={`flex flex-row items-center p-1 gap-2 rounded-full text-white ${
+                      className={`flex flex-row items-center p-1 gap-2 rounded-full text-foreground ${
                         userVote === "up"
                           ? "bg-primary"
                           : userVote === "down"
@@ -128,7 +128,7 @@ export function QuestionCard({ question }: QuestionCardProps) {
                     </div>
 
                     <Button
-                      variant="solid"
+                      variant="flat"
                       radius="full"
                       className="text-base font-bold"
                     >

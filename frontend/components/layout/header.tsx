@@ -29,6 +29,8 @@ export function Header({}: HeaderProps) {
   useEffect(() => {
     setMounted(true);
   }, []);
+    setMounted(true);
+  }, []);
 
   return (
     <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
@@ -96,6 +98,11 @@ export function Header({}: HeaderProps) {
               ) : (
                 <Moon className="h-5 w-5" />
               )}
+              {mounted && theme === "dark" ? (
+                <Sun className="h-5 w-5" />
+              ) : (
+                <Moon className="h-5 w-5" />
+              )}
             </Button>
 
             {isAuthenticated ? (
@@ -153,5 +160,6 @@ export function Header({}: HeaderProps) {
         </div>
       </div>
     </header>
+  );
   );
 }

@@ -7,9 +7,15 @@ import Image from "@tiptap/extension-image";
 import TextAlign from "@tiptap/extension-text-align";
 import Underline from "@tiptap/extension-underline";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
-import { lowlight } from "lowlight";
+import { common, createLowlight } from "lowlight";
 import { Separator } from "@/components/ui/separator";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Button } from "@heroui/react";
+import EmojiPicker, { EmojiClickData } from "emoji-picker-react";
 import {
   Bold,
   Italic,
@@ -27,8 +33,9 @@ import {
   AlignCenter,
   AlignRight,
   AlignJustify,
+  Smile,
 } from "lucide-react";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 
 interface RichTextEditorProps {
   content?: string;
@@ -43,13 +50,14 @@ export function RichTextEditor({
   placeholder,
   className,
 }: RichTextEditorProps) {
+  const lowlight = createLowlight(common);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+
   const editor = useEditor({
     extensions: [
       StarterKit,
       Underline,
-      Link.configure({
-        openOnClick: false,
-      }),
+      Link.configure({}),
       Image,
       TextAlign.configure({
         types: ["heading", "paragraph"],
@@ -98,57 +106,70 @@ export function RichTextEditor({
       .run();
   }, [editor]);
 
+  const onEmojiClick = useCallback(
+    (emojiData: EmojiClickData) => {
+      editor?.chain().focus().insertContent(emojiData.emoji).run();
+      setShowEmojiPicker(false);
+    },
+    [editor]
+  );
+
   if (!editor) {
     return null;
   }
 
   return (
-    <div className={`border rounded-md ${className}`}>
+    <div className={`rounded-xl border ${className} bg-card`}>
       {/* Toolbar */}
-      <div className="border-b p-2 bg-muted/50">
+      <div className="p-2 ">
         <div className="flex flex-wrap items-center gap-1">
           {/* Text Formatting */}
           <Button
-            variant="ghost"
+            variant="flat"
+            isIconOnly
             size="sm"
             className="h-8 w-8 p-0"
-            onClick={() => editor.chain().focus().toggleBold().run()}
+            onPress={() => editor.chain().focus().toggleBold().run()}
             data-active={editor.isActive("bold")}
           >
             <Bold className="h-4 w-4" />
           </Button>
           <Button
-            variant="ghost"
+            variant="flat"
+            isIconOnly
             size="sm"
             className="h-8 w-8 p-0"
-            onClick={() => editor.chain().focus().toggleItalic().run()}
+            onPress={() => editor.chain().focus().toggleItalic().run()}
             data-active={editor.isActive("italic")}
           >
             <Italic className="h-4 w-4" />
           </Button>
           <Button
-            variant="ghost"
+            variant="flat"
+            isIconOnly
             size="sm"
             className="h-8 w-8 p-0"
-            onClick={() => editor.chain().focus().toggleUnderline().run()}
+            onPress={() => editor.chain().focus().toggleUnderline().run()}
             data-active={editor.isActive("underline")}
           >
             <UnderlineIcon className="h-4 w-4" />
           </Button>
           <Button
-            variant="ghost"
+            variant="flat"
+            isIconOnly
             size="sm"
             className="h-8 w-8 p-0"
-            onClick={() => editor.chain().focus().toggleStrike().run()}
+            onPress={() => editor.chain().focus().toggleStrike().run()}
             data-active={editor.isActive("strike")}
           >
             <Strikethrough className="h-4 w-4" />
           </Button>
           <Button
-            variant="ghost"
+            variant="flat"
+            isIconOnly
             size="sm"
             className="h-8 w-8 p-0"
-            onClick={() => editor.chain().focus().toggleCode().run()}
+            onPress={() => editor.chain().focus().toggleCode().run()}
             data-active={editor.isActive("code")}
           >
             <Code className="h-4 w-4" />
@@ -158,28 +179,31 @@ export function RichTextEditor({
 
           {/* Lists */}
           <Button
-            variant="ghost"
+            variant="flat"
+            isIconOnly
             size="sm"
             className="h-8 w-8 p-0"
-            onClick={() => editor.chain().focus().toggleBulletList().run()}
+            onPress={() => editor.chain().focus().toggleBulletList().run()}
             data-active={editor.isActive("bulletList")}
           >
             <List className="h-4 w-4" />
           </Button>
           <Button
-            variant="ghost"
+            variant="flat"
+            isIconOnly
             size="sm"
             className="h-8 w-8 p-0"
-            onClick={() => editor.chain().focus().toggleOrderedList().run()}
+            onPress={() => editor.chain().focus().toggleOrderedList().run()}
             data-active={editor.isActive("orderedList")}
           >
             <ListOrdered className="h-4 w-4" />
           </Button>
           <Button
-            variant="ghost"
+            variant="flat"
+            isIconOnly
             size="sm"
             className="h-8 w-8 p-0"
-            onClick={() => editor.chain().focus().toggleBlockquote().run()}
+            onPress={() => editor.chain().focus().toggleBlockquote().run()}
             data-active={editor.isActive("blockquote")}
           >
             <Quote className="h-4 w-4" />
@@ -189,57 +213,85 @@ export function RichTextEditor({
 
           {/* Media */}
           <Button
-            variant="ghost"
+            variant="flat"
+            isIconOnly
             size="sm"
             className="h-8 w-8 p-0"
-            onClick={addLink}
+            onPress={addLink}
           >
             <LinkIcon className="h-4 w-4" />
           </Button>
           <Button
-            variant="ghost"
+            variant="flat"
+            isIconOnly
             size="sm"
             className="h-8 w-8 p-0"
-            onClick={addImage}
+            onPress={addImage}
           >
             <ImageIcon className="h-4 w-4" />
           </Button>
+
+          {/* Emoji Picker */}
+          <Popover open={showEmojiPicker} onOpenChange={setShowEmojiPicker}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="flat"
+                isIconOnly
+                size="sm"
+                className="h-8 w-8 p-0"
+                onPress={() => setShowEmojiPicker(!showEmojiPicker)}
+              >
+                <Smile className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              className="w-auto p-0 border-0"
+              side="bottom"
+              align="start"
+            >
+              <EmojiPicker onEmojiClick={onEmojiClick} />
+            </PopoverContent>
+          </Popover>
 
           <Separator orientation="vertical" className="h-6 mx-1" />
 
           {/* Alignment */}
           <Button
-            variant="ghost"
+            variant="flat"
+            isIconOnly
             size="sm"
             className="h-8 w-8 p-0"
-            onClick={() => editor.chain().focus().setTextAlign("left").run()}
+            onPress={() => editor.chain().focus().setTextAlign("left").run()}
             data-active={editor.isActive({ textAlign: "left" })}
           >
             <AlignLeft className="h-4 w-4" />
           </Button>
           <Button
-            variant="ghost"
+            variant="flat"
+            isIconOnly
             size="sm"
             className="h-8 w-8 p-0"
-            onClick={() => editor.chain().focus().setTextAlign("center").run()}
+            onPress={() => editor.chain().focus().setTextAlign("center").run()}
             data-active={editor.isActive({ textAlign: "center" })}
           >
             <AlignCenter className="h-4 w-4" />
           </Button>
           <Button
-            variant="ghost"
+            variant="flat"
+            isIconOnly
             size="sm"
             className="h-8 w-8 p-0"
-            onClick={() => editor.chain().focus().setTextAlign("right").run()}
+            onPress={() => editor.chain().focus().setTextAlign("right").run()}
             data-active={editor.isActive({ textAlign: "right" })}
           >
             <AlignRight className="h-4 w-4" />
           </Button>
           <Button
-            variant="ghost"
+            variant="flat"
+            isIconOnly
             size="sm"
             className="h-8 w-8 p-0"
-            onClick={() => editor.chain().focus().setTextAlign("justify").run()}
+            onPress={() => editor.chain().focus().setTextAlign("justify").run()}
             data-active={editor.isActive({ textAlign: "justify" })}
           >
             <AlignJustify className="h-4 w-4" />
@@ -249,19 +301,21 @@ export function RichTextEditor({
 
           {/* History */}
           <Button
-            variant="ghost"
+            variant="flat"
+            isIconOnly
             size="sm"
             className="h-8 w-8 p-0"
-            onClick={() => editor.chain().focus().undo().run()}
+            onPress={() => editor.chain().focus().undo().run()}
             disabled={!editor.can().undo()}
           >
             <Undo className="h-4 w-4" />
           </Button>
           <Button
-            variant="ghost"
+            variant="flat"
+            isIconOnly
             size="sm"
             className="h-8 w-8 p-0"
-            onClick={() => editor.chain().focus().redo().run()}
+            onPress={() => editor.chain().focus().redo().run()}
             disabled={!editor.can().redo()}
           >
             <Redo className="h-4 w-4" />
