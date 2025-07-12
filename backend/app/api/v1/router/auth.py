@@ -4,7 +4,7 @@ Authentication endpoints for user registration, login, and password management.
 
 from datetime import timedelta
 
-from app.api.v1.dependencies import get_current_user, require_role
+from app.api.v1.dependencies import get_current_user
 from app.config.settings import settings
 from app.models.user_models import (
     CurrentUserModel,
@@ -19,7 +19,6 @@ from app.services.user_service import (
     change_user_password,
     create_user,
     get_user_by_id,
-    update_user_role,
 )
 from app.utils.auth_utils import AuthUtils
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -193,38 +192,4 @@ async def refresh_access_token(
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Token refresh failed"
-        )
-
-
-# Admin-only endpoints
-@router.post("/admin/users/{user_id}/role", response_model=dict)
-async def update_user_role_admin(
-    user_id: str,
-    new_role: UserRole,
-    current_user: CurrentUserModel = Depends(require_role(UserRole.ADMIN)),
-):
-    """Update a user's role (admin only)."""
-    try:
-        updated_user = await update_user_role(
-            user_id=user_id, new_role=new_role, updated_by=current_user.user_id
-        )
-
-        return {
-            "message": "User role updated successfully",
-            "user": {
-                "id": updated_user["_id"],
-                "name": updated_user["name"],
-                "email": updated_user["email"],
-                "role": updated_user["role"],
-                "permissions": updated_user.get("permissions", []),
-                "updated_at": updated_user["updated_at"],
-            },
-        }
-
-    except HTTPException:
-        raise
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update user role",
         )

@@ -37,6 +37,8 @@ services:
         condition: service_healthy
       mongo:
         condition: service_healthy
+      chromadb:
+        condition: service_healthy
     networks:
       - odoo_network
     healthcheck:
@@ -79,6 +81,27 @@ services:
     networks:
       - odoo_network
 
+  # ChromaDB Service
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: chromadb
+    environment:
+      - CHROMA_SERVER_HOST=0.0.0.0
+      - CHROMA_SERVER_HTTP_PORT=8000
+    ports:
+      - "8002:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    restart: on-failure
+    healthcheck:
+      test:
+        ["CMD", "/bin/bash", "-c", "cat < /dev/null > /dev/tcp/localhost/8000"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    networks:
+      - odoo_network
+
   # Mongo Express Service (optional - for development)
   mongo_express:
     image: mongo-express:latest
@@ -101,6 +124,7 @@ services:
 volumes:
   redis_data:
   mongo_data:
+  chroma_data:
 
 networks:
   odoo_network:
