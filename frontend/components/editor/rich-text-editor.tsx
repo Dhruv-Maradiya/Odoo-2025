@@ -9,7 +9,13 @@ import Underline from "@tiptap/extension-underline";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { common, createLowlight } from "lowlight";
 import { Separator } from "@/components/ui/separator";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Button } from "@heroui/react";
+import EmojiPicker, { EmojiClickData } from "emoji-picker-react";
 import {
   Bold,
   Italic,
@@ -27,8 +33,9 @@ import {
   AlignCenter,
   AlignRight,
   AlignJustify,
+  Smile,
 } from "lucide-react";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 
 interface RichTextEditorProps {
   content?: string;
@@ -44,6 +51,7 @@ export function RichTextEditor({
   className,
 }: RichTextEditorProps) {
   const lowlight = createLowlight(common);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
   const editor = useEditor({
     extensions: [
@@ -98,12 +106,20 @@ export function RichTextEditor({
       .run();
   }, [editor]);
 
+  const onEmojiClick = useCallback(
+    (emojiData: EmojiClickData) => {
+      editor?.chain().focus().insertContent(emojiData.emoji).run();
+      setShowEmojiPicker(false);
+    },
+    [editor]
+  );
+
   if (!editor) {
     return null;
   }
 
   return (
-    <div className={`border rounded-xl ${className}`}>
+    <div className={`rounded-xl border ${className} bg-card`}>
       {/* Toolbar */}
       <div className="p-2 ">
         <div className="flex flex-wrap items-center gap-1">
@@ -214,6 +230,28 @@ export function RichTextEditor({
           >
             <ImageIcon className="h-4 w-4" />
           </Button>
+
+          {/* Emoji Picker */}
+          <Popover open={showEmojiPicker} onOpenChange={setShowEmojiPicker}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="flat"
+                isIconOnly
+                size="sm"
+                className="h-8 w-8 p-0"
+                onPress={() => setShowEmojiPicker(!showEmojiPicker)}
+              >
+                <Smile className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              className="w-auto p-0 border-0"
+              side="bottom"
+              align="start"
+            >
+              <EmojiPicker onEmojiClick={onEmojiClick} />
+            </PopoverContent>
+          </Popover>
 
           <Separator orientation="vertical" className="h-6 mx-1" />
 

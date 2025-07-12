@@ -126,7 +126,7 @@ export function QACard({
 
           {/* Content Section */}
           <div className="flex-1">
-            <div className="prose prose-sm max-w-none mb-4">
+            <div className="prose prose-sm max-w-none mb-4 flex gap-10">
               {typeof content === "string" ? (
                 isQuestion ? (
                   <p className="text-foreground-600 leading-relaxed">

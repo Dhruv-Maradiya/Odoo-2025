@@ -170,10 +170,7 @@ export default function QuestionDetailPage() {
                 />
 
                 <div className="flex justify-end">
-                  <Button
-                    size="lg"
-                    className="px-8 bg-primary text-white hover:bg-primary/90 transition-colors rounded-full"
-                  >
+                  <Button radius="full" color="primary">
                     Post Your Answer
                   </Button>
                 </div>
@@ -182,8 +179,8 @@ export default function QuestionDetailPage() {
           </div>
 
           {/* Sidebar */}
-          <div className="lg:col-span-1">
-            <Card className="shadow-none bg-foreground-50 outline-1 outline-foreground-100 rounded-2xl">
+          <div className="lg:col-span-1 ">
+            <Card className="shadow-none bg-foreground-50 outline-1 outline-foreground-100 rounded-2xl sticky top-20">
               <CardHeader className="pb-4">
                 <h4 className="font-semibold">Related Questions</h4>
               </CardHeader>
