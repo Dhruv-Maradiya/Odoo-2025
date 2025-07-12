@@ -36,7 +36,8 @@ export default withAuth(
         if (
           pathname.startsWith("/admin") ||
           pathname.startsWith("/ask") ||
-          pathname.startsWith("/notifications")
+          pathname.startsWith("/notifications") ||
+          pathname.startsWith("/profile")
         ) {
           return !!token;
         }

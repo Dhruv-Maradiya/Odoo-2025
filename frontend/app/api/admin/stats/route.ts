@@ -10,6 +10,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const backendUrl = process.env.BACKEND_URL;
+    if (!backendUrl) {
+      console.error("BACKEND_URL environment variable is not set");
+      return NextResponse.json(
+        { error: "Backend configuration error" },
+        { status: 500 }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const query = searchParams.get("query");
     const dateFrom = searchParams.get("date_from");
@@ -21,7 +30,7 @@ export async function GET(request: NextRequest) {
     if (dateTo) params.set("date_to", dateTo);
 
     const backendResponse = await fetch(
-      `${process.env.BACKEND_URL}/api/v1/qa/admin/stats?${params}`,
+      `${backendUrl}/api/v1/qa/admin/stats?${params}`,
       {
         headers: {
           Authorization: `Bearer ${session.accessToken}`,
