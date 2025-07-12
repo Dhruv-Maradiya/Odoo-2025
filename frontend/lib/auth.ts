@@ -49,6 +49,25 @@ export const authOptions: NextAuthOptions = {
     signIn: "/auth/login",
   },
   callbacks: {
+    async signIn({ user, account, profile }) {
+      return true;
+    },
+    async redirect({ url, baseUrl }) {
+      // If user is signing in and has admin role, redirect to admin dashboard
+      if (url.includes("/auth/login") || url.includes("/auth/register")) {
+        return baseUrl;
+      }
+      // If the URL is relative, make it absolute
+      if (url.startsWith("/")) {
+        return `${baseUrl}${url}`;
+      }
+      // If the URL is absolute and on the same origin, allow it
+      if (new URL(url).origin === baseUrl) {
+        return url;
+      }
+      // Otherwise redirect to base URL
+      return baseUrl;
+    },
     async jwt({ token, user, account }) {
       // Initial sign in
       if (account && user) {

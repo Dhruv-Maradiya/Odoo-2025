@@ -617,7 +617,7 @@ class QAService:
         if not vote_doc:
             return False
 
-        vote_type = vote_doc["vote_type"]
+        question_id = answer_doc["question_id"]
 
         # Remove the vote
         result = await self.votes.delete_one({"_id": vote_doc["_id"]})
@@ -698,12 +698,166 @@ class QAService:
         result = await self.comments.delete_one({"_id": comment_id})
         return result.deleted_count > 0
 
+    async def admin_delete_comment(self, comment_id: str) -> bool:
+        """Admin delete: Delete any comment regardless of authorship."""
+        comment_doc = await self.comments.find_one({"_id": comment_id})
+        if not comment_doc:
+            return False
+
+        result = await self.comments.delete_one({"_id": comment_id})
+        return result.deleted_count > 0
+
+    async def admin_bulk_delete_questions(
+        self, question_ids: List[str]
+    ) -> Dict[str, Any]:
+        """Admin bulk delete: Delete multiple questions at once."""
+        deleted_count = 0
+        failed_ids = []
+
+        for question_id in question_ids:
+            try:
+                success = await self.admin_delete_question(question_id)
+                if success:
+                    deleted_count += 1
+                else:
+                    failed_ids.append(question_id)
+            except Exception:
+                failed_ids.append(question_id)
+
+        return {
+            "total_requested": len(question_ids),
+            "deleted_count": deleted_count,
+            "failed_count": len(failed_ids),
+            "failed_ids": failed_ids,
+        }
+
+    async def admin_flag_question(
+        self, question_id: str, reason: str, admin_id: str
+    ) -> bool:
+        """Admin flag: Flag a question for review."""
+        now = datetime.now(timezone.utc)
+
+        result = await self.questions.update_one(
+            {"_id": question_id},
+            {
+                "$set": {
+                    "is_flagged": True,
+                    "flag_reason": reason,
+                    "flagged_by": admin_id,
+                    "flagged_at": now,
+                }
+            },
+        )
+        return result.modified_count > 0
+
+    async def admin_unflag_question(self, question_id: str) -> bool:
+        """Admin unflag: Remove flag from a question."""
+        result = await self.questions.update_one(
+            {"_id": question_id},
+            {
+                "$unset": {
+                    "is_flagged": "",
+                    "flag_reason": "",
+                    "flagged_by": "",
+                    "flagged_at": "",
+                }
+            },
+        )
+        return result.modified_count > 0
+
+    async def admin_get_platform_stats(
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """Admin stats: Get comprehensive platform statistics."""
+        now = datetime.now(timezone.utc)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        # Basic counts
+        total_questions = await self.questions.count_documents({})
+        total_answers = await self.answers.count_documents({})
+        total_comments = await self.comments.count_documents({})
+        total_votes = await self.votes.count_documents({})
+
+        # Today's activity
+        questions_today = await self.questions.count_documents(
+            {"created_at": {"$gte": today_start}}
+        )
+        answers_today = await self.answers.count_documents(
+            {"created_at": {"$gte": today_start}}
+        )
+        comments_today = await self.comments.count_documents(
+            {"created_at": {"$gte": today_start}}
+        )
+
+        # User stats
+        users_collection = self.db.get_collection("users")
+        total_users = await users_collection.count_documents({})
+        new_users_today = await users_collection.count_documents(
+            {"created_at": {"$gte": today_start}}
+        )
+
+        # Flagged content
+        flagged_questions = await self.questions.count_documents({"is_flagged": True})
+
+        # Top tags
+        pipeline = [
+            {"$unwind": "$tags"},
+            {"$group": {"_id": "$tags", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$limit": 10},
+        ]
+        top_tags_cursor = self.questions.aggregate(pipeline)
+        top_tags = await top_tags_cursor.to_list(length=10)
+
+        return {
+            "overview": {
+                "total_questions": total_questions,
+                "total_answers": total_answers,
+                "total_comments": total_comments,
+                "total_users": total_users,
+                "total_votes": total_votes,
+                "flagged_questions": flagged_questions,
+            },
+            "activity": {
+                "questions_today": questions_today,
+                "answers_today": answers_today,
+                "comments_today": comments_today,
+                "new_users_today": new_users_today,
+            },
+            "top_tags": [
+                {"tag": tag["_id"], "count": tag["count"]} for tag in top_tags
+            ],
+            "generated_at": now,
+        }
+
+    async def remove_vote(self, item_id: str, user_id: str) -> bool:
+        """Remove a vote by a user on a question or answer."""
+        result = await self.votes.delete_one(
+            {
+                "user_id": user_id,
+                "$or": [{"question_id": item_id}, {"answer_id": item_id}],
+            }
+        )
+        return result.deleted_count > 0
+
     async def mark_all_notifications_read(self, user_id: str) -> int:
         """Mark all notifications as read for a user."""
         result = await self.notifications.update_many(
             {"user_id": user_id, "is_read": False}, {"$set": {"is_read": True}}
         )
         return result.modified_count
+
+    async def get_similar_questions(
+        self, question_id: str, limit: int = 5
+    ) -> List[QuestionModel]:
+        """Get similar questions based on content similarity."""
+        # For now, return an empty list - would require implementing semantic similarity
+        return []
+
+    async def semantic_search_all(self, query: str, limit: int = 20) -> List[dict]:
+        """Perform semantic search across questions and answers."""
+        # For now, return an empty list - would require implementing ChromaDB search
+        return []
 
     # Helper methods
     async def _get_user_info(self, user_id: str) -> Optional[QuestionAuthorModel]:
@@ -723,42 +877,50 @@ class QAService:
     async def _get_question_answers(self, question_id: str) -> List[AnswerModel]:
         """Get all answers for a question."""
         cursor = self.answers.find({"question_id": question_id}).sort("created_at", 1)
-        answer_docs = await cursor.to_list(length=None)
-
         answers = []
-        for doc in answer_docs:
-            answer = await self._get_answer_by_id(doc["_id"])
-            if answer:
+
+        async for doc in cursor:
+            author = await self._get_user_info(doc["author_id"])
+            if author:
+                answer = AnswerModel(
+                    answer_id=doc["_id"],
+                    question_id=doc["question_id"],
+                    content=doc["content"],
+                    author=author,
+                    created_at=doc["created_at"],
+                    updated_at=doc.get("updated_at"),
+                    vote_count=doc.get("vote_count", 0),
+                    upvotes=doc.get("upvotes", 0),
+                    downvotes=doc.get("downvotes", 0),
+                    is_accepted=doc.get("is_accepted", False),
+                    comments=[],  # Comments would be loaded separately if needed
+                )
                 answers.append(answer)
 
         return answers
 
     async def _get_answer_by_id(self, answer_id: str) -> Optional[AnswerModel]:
-        """Get an answer by ID with comments."""
-        answer_doc = await self.answers.find_one({"_id": answer_id})
-        if not answer_doc:
+        """Get an answer by ID."""
+        doc = await self.answers.find_one({"_id": answer_id})
+        if not doc:
             return None
 
-        author = await self._get_user_info(answer_doc["author_id"])
+        author = await self._get_user_info(doc["author_id"])
         if not author:
             return None
 
-        # Get comments
-        comments = await self._get_answer_comments(answer_id)
-
         return AnswerModel(
-            answer_id=answer_doc["_id"],
-            question_id=answer_doc["question_id"],
+            answer_id=doc["_id"],
+            question_id=doc["question_id"],
+            content=doc["content"],
             author=author,
-            content=answer_doc["content"],
-            images=answer_doc.get("images", []),
-            is_accepted=answer_doc["is_accepted"],
-            vote_count=answer_doc["vote_count"],
-            upvotes=answer_doc["upvotes"],
-            downvotes=answer_doc["downvotes"],
-            comments=comments,
-            created_at=answer_doc["created_at"],
-            updated_at=answer_doc.get("updated_at"),
+            created_at=doc["created_at"],
+            updated_at=doc.get("updated_at"),
+            vote_count=doc.get("vote_count", 0),
+            upvotes=doc.get("upvotes", 0),
+            downvotes=doc.get("downvotes", 0),
+            is_accepted=doc.get("is_accepted", False),
+            comments=[],  # Comments would be loaded separately if needed
         )
 
     async def _get_answer_comments(self, answer_id: str) -> List[CommentModel]:
@@ -793,10 +955,12 @@ class QAService:
     ):
         """Create a notification."""
         notification_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc)
+
         notification_doc = {
             "_id": notification_id,
             "user_id": user_id,
-            "type": notification_type,
+            "type": notification_type.value,
             "title": title,
             "message": message,
             "related_id": related_id,
