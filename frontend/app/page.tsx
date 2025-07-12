@@ -82,7 +82,7 @@ export default function HomePage() {
         />
 
         {/* Questions List */}
-        <div className="space-y-4">
+        <div className="flex flex-col gap-3">
           {mockQuestions.map((question) => (
             <QuestionCard key={question.id} question={question} />
           ))}
