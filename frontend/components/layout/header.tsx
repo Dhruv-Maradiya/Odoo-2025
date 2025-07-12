@@ -1,22 +1,22 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Search, User, Sun, Moon, Menu, LogOut } from "lucide-react";
-import { useTheme } from "next-themes";
-import Link from "next/link";
 import { NotificationDropdown } from "@/components/notifications/notification-dropdown";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { useCurrentUser } from "@/hooks/use-current-user";
-import { signIn, signOut } from "next-auth/react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { useCurrentUser } from "@/hooks/use-current-user";
+import { LogOut, Menu, Moon, Search, Sun, User } from "lucide-react";
+import { signOut } from "next-auth/react";
+import { useTheme } from "next-themes";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 
 interface HeaderProps {}
 
@@ -27,8 +27,6 @@ export function Header({}: HeaderProps) {
   const { user, isLoading, isAuthenticated } = useCurrentUser();
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
     setMounted(true);
   }, []);
 
@@ -160,6 +158,5 @@ export function Header({}: HeaderProps) {
         </div>
       </div>
     </header>
-  );
   );
 }
