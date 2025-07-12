@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient, UseQueryOptions } from '@tanstack/react-query';
-import { apiClient } from '@/lib/api-client';
+import { signIn, signOut, useSession } from 'next-auth/react';
 import type {
     LoginRequest,
     RegisterRequest,
@@ -16,63 +16,44 @@ export const authKeys = {
 
 // Auth Queries
 export const useCurrentUser = (options?: UseQueryOptions<CurrentUser>) => {
-    return useQuery({
-        queryKey: authKeys.currentUser(),
-        queryFn: () => apiClient.getCurrentUser(),
-        staleTime: 5 * 60 * 1000, // 5 minutes
-        ...options,
-    });
+    const { data: session, status } = useSession();
+    return {
+        user: session?.user || null,
+        isLoading: status === 'loading',
+        isAuthenticated: status === 'authenticated',
+        isUnauthenticated: status === 'unauthenticated',
+    };
 };
 
 // Auth Mutations
 export const useLogin = () => {
-    const queryClient = useQueryClient();
-
     return useMutation({
-        mutationFn: (credentials: LoginRequest) => apiClient.login(credentials),
-        onSuccess: (data: AuthResponse) => {
-            // Store user data
-            if (typeof window !== 'undefined') {
-                localStorage.setItem('user', JSON.stringify(data.user));
-            }
-
-            // Invalidate and refetch user data
-            queryClient.invalidateQueries({ queryKey: authKeys.currentUser() });
+        mutationFn: async (credentials: LoginRequest) => {
+            const result = await signIn('credentials', {
+                email: credentials.email,
+                password: credentials.password,
+                redirect: false,
+            });
+            if (result?.error) throw new Error(result.error);
+            return result;
         },
     });
 };
 
 export const useRegister = () => {
-    const queryClient = useQueryClient();
-
     return useMutation({
-        mutationFn: (userData: RegisterRequest) => apiClient.register(userData),
-        onSuccess: (data: AuthResponse) => {
-            // Store user data
-            if (typeof window !== 'undefined') {
-                localStorage.setItem('user', JSON.stringify(data.user));
-            }
-
-            // Invalidate and refetch user data
-            queryClient.invalidateQueries({ queryKey: authKeys.currentUser() });
+        mutationFn: async (userData: RegisterRequest) => {
+            // Call your registration API endpoint directly here if needed
+            // Then sign in with NextAuth
+            throw new Error('Implement registration via NextAuth or custom API');
         },
     });
 };
 
-export const useChangePassword = () => {
-    return useMutation({
-        mutationFn: (data: PasswordChangeRequest) => apiClient.changePassword(data),
-    });
-};
-
 export const useLogout = () => {
-    const queryClient = useQueryClient();
-
     return useMutation({
-        mutationFn: () => apiClient.logout(),
-        onSuccess: () => {
-            // Clear all queries
-            queryClient.clear();
+        mutationFn: async () => {
+            await signOut({ redirect: false });
         },
     });
 };

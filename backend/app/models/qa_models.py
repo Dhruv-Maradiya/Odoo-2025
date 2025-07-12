@@ -156,6 +156,7 @@ class QuestionModel(BaseModel):
     tags: List[str]
     images: Optional[List[str]] = None
     view_count: int = 0
+    vote_count: int = 0
     answer_count: int = 0
     has_accepted_answer: bool = False
     answers: List[AnswerModel] = []
@@ -205,6 +206,7 @@ class QuestionSearchRequest(BaseModel):
     author_id: Optional[str] = None
     has_accepted_answer: Optional[bool] = None
     sort_by: Optional[str] = "created_at"
+    vote_count: int = 0
     order: Optional[str] = "desc"
     page: int = Field(default=1, ge=1)
     limit: int = Field(default=20, ge=1, le=100)

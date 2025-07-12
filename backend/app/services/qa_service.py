@@ -67,7 +67,6 @@ class QAService:
         }
 
         test = await self.questions.insert_one(question_doc)
-        print("THISISATEST", test.inserted_id)
         # Add to ChromaDB for semantic search
         await chromadb_service.add_question(
             question_id=str(test.inserted_id),
@@ -100,7 +99,6 @@ class QAService:
 
         # Get author info
         author = await self._get_user_info(question_doc["author_id"])
-        print(f"{author=}")
 
         if not author:
             return None
@@ -465,6 +463,75 @@ class QAService:
                 )
 
         return await self._get_answer_by_id(answer_id)
+
+    async def vote_question(
+        self, question_id: str, vote_data: VoteRequest, user_id: str
+    ) -> Optional[QuestionModel]:
+        """Vote on a question (upvote or downvote)."""
+        question = await self.questions.find_one({"_id": ObjectId(question_id)})
+        if not question:
+            return None
+
+        # Check if user already voted
+        existing_vote = await self.votes.find_one(
+            {"question_id": question_id, "user_id": user_id}
+        )
+
+        if existing_vote:
+            old_vote_type = existing_vote["vote_type"]
+            await self.votes.update_one(
+                {"_id": existing_vote["_id"]},
+                {"$set": {"vote_type": vote_data.vote_type}},
+            )
+
+            # Update vote counts
+            if old_vote_type != vote_data.vote_type:
+                if old_vote_type == VoteType.UPVOTE:
+                    await self.questions.update_one(
+                        {"_id": ObjectId(question_id)},
+                        {"$inc": {"upvotes": -1, "vote_count": -1}},
+                    )
+                else:
+                    await self.questions.update_one(
+                        {"_id": ObjectId(question_id)},
+                        {"$inc": {"downvotes": -1, "vote_count": 1}},
+                    )
+
+                if vote_data.vote_type == VoteType.UPVOTE:
+                    await self.questions.update_one(
+                        {"_id": ObjectId(question_id)},
+                        {"$inc": {"upvotes": 1, "vote_count": 1}},
+                    )
+                else:
+                    await self.questions.update_one(
+                        {"_id": ObjectId(question_id)},
+                        {"$inc": {"downvotes": 1, "vote_count": -1}},
+                    )
+        else:
+            # Create new vote
+            vote_id = str(uuid.uuid4())
+            vote_doc = {
+                "_id": vote_id,
+                "question_id": question_id,
+                "user_id": user_id,
+                "vote_type": vote_data.vote_type,
+                "created_at": datetime.now(timezone.utc),
+            }
+            await self.votes.insert_one(vote_doc)
+
+            # Update vote counts
+            if vote_data.vote_type == VoteType.UPVOTE:
+                await self.questions.update_one(
+                    {"_id": ObjectId(question_id)},
+                    {"$inc": {"upvotes": 1, "vote_count": 1}},
+                )
+            else:
+                await self.questions.update_one(
+                    {"_id": ObjectId(question_id)},
+                    {"$inc": {"downvotes": 1, "vote_count": -1}},
+                )
+
+        return await self.get_question_by_id(question_id)
 
     async def accept_answer(
         self, question_id: str, answer_id: str, user_id: str

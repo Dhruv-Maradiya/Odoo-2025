@@ -1,12 +1,8 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  apiClient,
-  type LoginRequest,
-  type RegisterRequest,
-  type AuthResponse,
-} from "@/lib/api-client";
+import type { LoginRequest, RegisterRequest } from "@/types/api";
+import { signIn, signOut, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -15,16 +11,18 @@ export function useLogin() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (credentials: LoginRequest) => apiClient.login(credentials),
-    onSuccess: (data: AuthResponse) => {
-      // Store tokens in localStorage (consider using httpOnly cookies for production)
-      localStorage.setItem("access_token", data.access_token);
-      localStorage.setItem("refresh_token", data.refresh_token);
-      localStorage.setItem("user", JSON.stringify(data.user));
-
-      // Invalidate and refetch user queries
+    mutationFn: async (credentials: LoginRequest) => {
+      // Use NextAuth signIn, which now calls FastAPI /auth/login via credentials provider
+      const result = await signIn("credentials", {
+        email: credentials.email,
+        password: credentials.password,
+        redirect: false,
+      });
+      if (result?.error) throw new Error(result.error);
+      return result;
+    },
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["user"] });
-
       toast.success("Login successful!");
       router.push("/");
     },
@@ -39,45 +37,36 @@ export function useRegister() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (userData: RegisterRequest) => apiClient.register(userData),
-    onSuccess: (data: AuthResponse) => {
-      // Store tokens in localStorage
-      localStorage.setItem("access_token", data.access_token);
-      localStorage.setItem("refresh_token", data.refresh_token);
-      localStorage.setItem("user", JSON.stringify(data.user));
-
-      // Invalidate and refetch user queries
+    mutationFn: async (userData: RegisterRequest) => {
+      // Register with FastAPI backend
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1"}/auth/register`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(userData),
+        }
+      );
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Registration failed");
+      }
+      // After successful registration, sign in with NextAuth
+      const signInResult = await signIn("credentials", {
+        email: userData.email,
+        password: userData.password,
+        redirect: false,
+      });
+      if (signInResult?.error) throw new Error(signInResult.error);
+      return await response.json();
+    },
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["user"] });
-
       toast.success("Registration successful!");
       router.push("/");
     },
     onError: (error: Error) => {
       toast.error(error.message || "Registration failed");
-    },
-  });
-}
-
-export function useGoogleAuth() {
-  const router = useRouter();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (token: string) => apiClient.googleAuth(token),
-    onSuccess: (data: AuthResponse) => {
-      // Store tokens in localStorage
-      localStorage.setItem("access_token", data.access_token);
-      localStorage.setItem("refresh_token", data.refresh_token);
-      localStorage.setItem("user", JSON.stringify(data.user));
-
-      // Invalidate and refetch user queries
-      queryClient.invalidateQueries({ queryKey: ["user"] });
-
-      toast.success("Google authentication successful!");
-      router.push("/");
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || "Google authentication failed");
     },
   });
 }
@@ -88,17 +77,22 @@ export function useLogout() {
 
   return useMutation({
     mutationFn: async () => {
-      // Clear tokens from localStorage
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("refresh_token");
-      localStorage.removeItem("user");
+      await signOut({ redirect: false });
     },
     onSuccess: () => {
-      // Clear all queries
       queryClient.clear();
-
       toast.success("Logged out successfully!");
       router.push("/auth/login");
     },
   });
+}
+
+export function useCurrentUser() {
+  const { data: session, status } = useSession();
+  return {
+    user: session?.user || null,
+    isLoading: status === "loading",
+    isAuthenticated: status === "authenticated",
+    isUnauthenticated: status === "unauthenticated",
+  };
 }

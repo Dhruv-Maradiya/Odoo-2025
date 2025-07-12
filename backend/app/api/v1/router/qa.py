@@ -731,3 +731,30 @@ async def admin_suspend_user(
         "suspended_by": current_user.email,
         "message": "User suspension endpoint - implement in user service",
     }
+
+
+@router.post("/questions/{question_id}/vote", status_code=status.HTTP_201_CREATED)
+async def vote_question(
+    question_id: str,
+    vote_data: VoteRequest,
+    current_user: CurrentUserModel = Depends(require_role(UserRole.USER)),
+):
+    """Vote on a question (upvote or downvote)."""
+    question = await qa_service.vote_question(
+        question_id=question_id, vote_data=vote_data, user_id=current_user.user_id
+    )
+
+    print(f"{question=}")
+
+    if not question:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Question not found"
+        )
+
+    return {
+        "message": "Vote recorded successfully",
+        "vote_count": question.vote_count,
+        "upvotes": getattr(question, "upvotes", None),
+        "downvotes": getattr(question, "downvotes", None),
+        "user_vote": vote_data.vote_type,
+    }

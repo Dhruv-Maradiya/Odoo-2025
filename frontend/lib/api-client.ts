@@ -1,10 +1,5 @@
-import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
+import axios, { AxiosInstance } from 'axios';
 import type {
-  LoginRequest,
-  RegisterRequest,
-  AuthResponse,
-  PasswordChangeRequest,
-  CurrentUser,
   Question,
   QuestionWithAnswers,
   QuestionCreateRequest,
@@ -26,138 +21,21 @@ import type {
   PaginationParams,
   User,
 } from '@/types/api';
+import { useSession } from "next-auth/react";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
 class ApiClient {
   private client: AxiosInstance;
 
-  constructor() {
+  constructor(accessToken?: string) {
     this.client = axios.create({
       baseURL: API_BASE_URL,
       headers: {
         'Content-Type': 'application/json',
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       },
     });
-
-    // Request interceptor to add auth token
-    this.client.interceptors.request.use(
-      (config) => {
-        const token = this.getAccessToken();
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
-        }
-        return config;
-      },
-      (error) => {
-        return Promise.reject(error);
-      }
-    );
-
-    // Response interceptor to handle token refresh
-    this.client.interceptors.response.use(
-      (response) => response,
-      async (error) => {
-        const original = error.config;
-
-        if (error.response?.status === 401 && !original._retry) {
-          original._retry = true;
-
-          try {
-            const refreshToken = this.getRefreshToken();
-            if (refreshToken) {
-              const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {}, {
-                headers: {
-                  Authorization: `Bearer ${refreshToken}`,
-                },
-              });
-
-              const { access_token } = response.data;
-              this.setAccessToken(access_token);
-
-              return this.client(original);
-            }
-          } catch (refreshError) {
-            this.clearTokens();
-            window.location.href = '/auth/login';
-          }
-        }
-
-        return Promise.reject(error);
-      }
-    );
-  }
-
-  // Token management
-  private getAccessToken(): string | null {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('access_token');
-    }
-    return null;
-  }
-
-  private getRefreshToken(): string | null {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('refresh_token');
-    }
-    return null;
-  }
-
-  private setAccessToken(token: string): void {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('access_token', token);
-    }
-  }
-
-  private setRefreshToken(token: string): void {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('refresh_token', token);
-    }
-  }
-
-  private clearTokens(): void {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      localStorage.removeItem('user');
-    }
-  }
-
-  // Authentication endpoints
-  async login(credentials: LoginRequest): Promise<AuthResponse> {
-    const response = await this.client.post<AuthResponse>('/auth/login', credentials);
-    const authData = response.data;
-
-    // Store tokens
-    this.setAccessToken(authData.access_token);
-    this.setRefreshToken(authData.refresh_token);
-
-    return authData;
-  }
-
-  async register(userData: RegisterRequest): Promise<AuthResponse> {
-    const response = await this.client.post<AuthResponse>('/auth/register', userData);
-    const authData = response.data;
-
-    // Store tokens
-    this.setAccessToken(authData.access_token);
-    this.setRefreshToken(authData.refresh_token);
-
-    return authData;
-  }
-
-  async getCurrentUser(): Promise<CurrentUser> {
-    const response = await this.client.get<CurrentUser>('/auth/me');
-    return response.data;
-  }
-
-  async changePassword(data: PasswordChangeRequest): Promise<{ message: string }> {
-    const response = await this.client.post('/auth/change-password', data);
-    return response.data;
-  }
-
-  async logout(): Promise<void> {
-    this.clearTokens();
   }
 
   // Questions endpoints
@@ -185,6 +63,11 @@ class ApiClient {
 
   async deleteQuestion(id: string): Promise<void> {
     await this.client.delete(`/qa/questions/${id}`);
+  }
+
+  async voteQuestion(id: string, voteType: 'upvote' | 'downvote'): Promise<{ message: string; vote_count: number; upvotes?: number; downvotes?: number; user_vote: 'upvote' | 'downvote' }> {
+    const response = await this.client.post(`/qa/questions/${id}/vote`, { vote_type: voteType });
+    return response.data;
   }
 
   // Answers endpoints
@@ -298,3 +181,10 @@ class ApiClient {
 }
 
 export const apiClient = new ApiClient();
+
+export const getApiClient = (accessToken?: string) => new ApiClient(accessToken);
+
+// Usage example in a React component/hook:
+// const { data: session } = useSession();
+// const api = new AuthApiClient(session?.accessToken);
+// await api.voteQuestion(id, voteType);
