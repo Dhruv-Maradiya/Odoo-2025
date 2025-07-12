@@ -11,12 +11,14 @@ from pydantic import BaseModel, Field, validator
 
 class VoteType(str, Enum):
     """Vote types for answers."""
+
     UPVOTE = "upvote"
     DOWNVOTE = "downvote"
 
 
 class NotificationType(str, Enum):
     """Types of notifications."""
+
     QUESTION_ANSWERED = "question_answered"
     ANSWER_COMMENTED = "answer_commented"
     USER_MENTIONED = "user_mentioned"
@@ -25,6 +27,7 @@ class NotificationType(str, Enum):
 
 class TextAlignment(str, Enum):
     """Text alignment options for rich text."""
+
     LEFT = "left"
     CENTER = "center"
     RIGHT = "right"
@@ -33,57 +36,64 @@ class TextAlignment(str, Enum):
 # Request Models
 class QuestionCreateRequest(BaseModel):
     """Request model for creating a new question."""
+
     title: str = Field(min_length=5, max_length=200, description="Question title")
     description: str = Field(min_length=10, description="Rich text description")
     tags: List[str] = Field(description="Question tags")
     images: Optional[List[str]] = Field(None, description="List of image URLs")
 
-    @validator('tags')
+    @validator("tags")
     def validate_tags(cls, v):
         if len(v) < 1 or len(v) > 10:
-            raise ValueError('Must have between 1 and 10 tags')
+            raise ValueError("Must have between 1 and 10 tags")
         return v
 
 
 class QuestionUpdateRequest(BaseModel):
     """Request model for updating a question."""
+
     title: Optional[str] = Field(None, min_length=5, max_length=200)
     description: Optional[str] = Field(None, min_length=10)
     tags: Optional[List[str]] = None
     images: Optional[List[str]] = Field(None, description="List of image URLs")
 
-    @validator('tags')
+    @validator("tags")
     def validate_tags(cls, v):
         if v is not None and (len(v) < 1 or len(v) > 10):
-            raise ValueError('Must have between 1 and 10 tags')
+            raise ValueError("Must have between 1 and 10 tags")
         return v
 
 
 class AnswerCreateRequest(BaseModel):
     """Request model for creating an answer."""
+
     content: str = Field(..., min_length=10, description="Rich text answer content")
     images: Optional[List[str]] = Field(None, description="List of image URLs")
 
 
 class AnswerUpdateRequest(BaseModel):
     """Request model for updating an answer."""
+
     content: str = Field(..., min_length=10, description="Rich text answer content")
     images: Optional[List[str]] = Field(None, description="List of image URLs")
 
 
 class VoteRequest(BaseModel):
     """Request model for voting on an answer."""
+
     vote_type: VoteType
 
 
 class CommentCreateRequest(BaseModel):
     """Request model for creating a comment on an answer."""
+
     content: str = Field(..., min_length=1, max_length=500, description="Comment text")
 
 
 # Response Models
 class TagModel(BaseModel):
     """Tag model."""
+
     name: str
     count: int = 0
     description: Optional[str] = None
@@ -91,13 +101,16 @@ class TagModel(BaseModel):
 
 class QuestionAuthorModel(BaseModel):
     """Question/Answer author model."""
+
     user_id: str
     name: str
     email: str
+    picture: str | None
 
 
 class VoteModel(BaseModel):
     """Vote model."""
+
     vote_id: str
     user_id: str
     answer_id: str
@@ -107,6 +120,7 @@ class VoteModel(BaseModel):
 
 class CommentModel(BaseModel):
     """Comment model."""
+
     comment_id: str
     answer_id: str
     author: QuestionAuthorModel
@@ -117,6 +131,7 @@ class CommentModel(BaseModel):
 
 class AnswerModel(BaseModel):
     """Answer model."""
+
     answer_id: str
     question_id: str
     author: QuestionAuthorModel
@@ -133,6 +148,7 @@ class AnswerModel(BaseModel):
 
 class QuestionModel(BaseModel):
     """Question model."""
+
     question_id: str
     author: QuestionAuthorModel
     title: str
@@ -149,6 +165,7 @@ class QuestionModel(BaseModel):
 
 class QuestionListModel(BaseModel):
     """Simplified question model for listing."""
+
     question_id: str
     author: QuestionAuthorModel
     title: str
@@ -161,6 +178,7 @@ class QuestionListModel(BaseModel):
 
 class NotificationModel(BaseModel):
     """Notification model."""
+
     notification_id: str
     user_id: str
     type: NotificationType
@@ -173,6 +191,7 @@ class NotificationModel(BaseModel):
 
 class NotificationCountModel(BaseModel):
     """Notification count model."""
+
     total: int
     unread: int
 
@@ -180,6 +199,7 @@ class NotificationCountModel(BaseModel):
 # Search and Filter Models
 class QuestionSearchRequest(BaseModel):
     """Request model for searching questions."""
+
     query: Optional[str] = None
     tags: Optional[List[str]] = None
     author_id: Optional[str] = None
@@ -189,21 +209,24 @@ class QuestionSearchRequest(BaseModel):
     page: int = Field(default=1, ge=1)
     limit: int = Field(default=20, ge=1, le=100)
 
-    @validator('sort_by')
+    @validator("sort_by")
     def validate_sort_by(cls, v):
         if v not in ["created_at", "updated_at", "view_count", "answer_count"]:
-            raise ValueError('sort_by must be one of: created_at, updated_at, view_count, answer_count')
+            raise ValueError(
+                "sort_by must be one of: created_at, updated_at, view_count, answer_count"
+            )
         return v
 
-    @validator('order')
+    @validator("order")
     def validate_order(cls, v):
         if v not in ["asc", "desc"]:
-            raise ValueError('order must be either asc or desc')
+            raise ValueError("order must be either asc or desc")
         return v
 
 
 class QuestionSearchResponse(BaseModel):
     """Response model for question search."""
+
     questions: List[QuestionListModel]
     total: int
     page: int
@@ -215,6 +238,7 @@ class QuestionSearchResponse(BaseModel):
 # Statistics Models
 class UserStatsModel(BaseModel):
     """User statistics model."""
+
     user_id: str
     questions_asked: int = 0
     answers_given: int = 0
@@ -225,6 +249,7 @@ class UserStatsModel(BaseModel):
 
 class TagStatsModel(BaseModel):
     """Tag statistics model."""
+
     name: str
     question_count: int
     total_views: int

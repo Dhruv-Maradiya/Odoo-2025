@@ -29,7 +29,6 @@ class Settings(BaseSettings):
 
     # Email & Notifications
     FROM_EMAIL: str = "noreply@example.com"
-    EMAIL_NOTIFICATIONS_ENABLED: bool = True
 
     @computed_field
     def GOOGLE_CALLBACK_URL(self) -> str:

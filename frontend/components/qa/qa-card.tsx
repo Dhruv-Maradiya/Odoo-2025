@@ -14,7 +14,7 @@ export interface QACardProps {
   title?: string;
   content: string | ReactNode;
   tags?: string[];
-  author: string;
+  author: { name: string; email: string; picture: string };
   votes: number;
   userVote?: "up" | "down" | null;
   createdAt: string;
@@ -128,36 +128,31 @@ export function QACard({
           {/* Content Section */}
           <div className="flex-1">
             <div className="prose prose-sm max-w-none mb-4 flex gap-10">
-              {typeof content === "string" ? (
-                isQuestion ? (
-                  <p className="text-foreground-600 leading-relaxed">
-                    {content}
-                  </p>
-                ) : (
-                  <div dangerouslySetInnerHTML={{ __html: content }} />
-                )
-              ) : (
-                content
-              )}
+              {content && <div dangerouslySetInnerHTML={{ __html: content }} />}
             </div>
 
             {/* Author and timestamp info */}
             <div className="flex items-center justify-between text-sm text-muted-foreground border-t border-foreground-200 pt-4">
               <div className="flex items-center gap-2">
                 <span>
-                  {isQuestion ? "Asked" : "Answered"} {createdAt}
+                  {isQuestion ? "Asked" : "Answered"}{" "}
+                  {new Date(createdAt).toDateString()}
                 </span>
                 <Avatar className="h-6 w-6">
                   <AvatarFallback className="text-xs">
                     <Image
-                      src="https://github.com/aryanranderiya.png"
-                      alt={author}
-                      width={20}
+                      src={
+                        author?.picture ||
+                        "https://links.aryanranderiya.com/l/default_user"
+                      }
+                      alt={author?.name}
+                      className="rounded-full"
                       height={20}
+                      width={20}
                     />
                   </AvatarFallback>
                 </Avatar>
-                <span>u/{author}</span>
+                <span>u/{author?.name}</span>
               </div>
             </div>
 

@@ -38,20 +38,26 @@ async def create_question(
     current_user: CurrentUserModel = Depends(get_current_user),
 ) -> QuestionModel:
     """Create a new question."""
-    question = await qa_service.create_question(
-        question_data=question_data,
-        author_id=current_user.user_id,
-        author_name=current_user.name,
-        author_email=current_user.email,
-    )
 
-    if not question:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create question",
+    try:
+        question = await qa_service.create_question(
+            question_data=question_data,
+            author_id=current_user.user_id,
+            author_name=current_user.name,
+            author_email=current_user.email,
         )
+        print(question)
+        if not question:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create question",
+            )
 
-    return question
+        return question
+
+    except Exception as e:
+        print("this is the error man", e)
+        raise
 
 
 @router.get("/questions", response_model=QuestionSearchResponse)

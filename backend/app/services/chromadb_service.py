@@ -64,7 +64,7 @@ class ChromaDBService:
                 "question_id": question_id,
                 "title": title,
                 "type": "question",
-                "tags": tags,
+                "tags": str(tags),
                 "author_id": author_id,
             }
 

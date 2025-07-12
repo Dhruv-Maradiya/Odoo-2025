@@ -27,6 +27,7 @@ from app.models.qa_models import (
 )
 from app.services.chromadb_service import chromadb_service
 from pymongo import DESCENDING
+from bson import ObjectId
 
 
 class QAService:
@@ -42,13 +43,17 @@ class QAService:
         self.tags = self.db.get_collection("tags")
         self.user_stats = self.db.get_collection("user_stats")
 
-    async def create_question(self, question_data: QuestionCreateRequest, author_id: str, author_name: str, author_email: str) -> Optional[QuestionModel]:
+    async def create_question(
+        self,
+        question_data: QuestionCreateRequest,
+        author_id: str,
+        author_name: str,
+        author_email: str,
+    ) -> Optional[QuestionModel]:
         """Create a new question."""
-        question_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc)
 
         question_doc = {
-            "_id": question_id,
             "author_id": author_id,
             "title": question_data.title,
             "description": question_data.description,
@@ -61,11 +66,11 @@ class QAService:
             "updated_at": None,
         }
 
-        await self.questions.insert_one(question_doc)
-
+        test = await self.questions.insert_one(question_doc)
+        print("THISISATEST", test.inserted_id)
         # Add to ChromaDB for semantic search
         await chromadb_service.add_question(
-            question_id=question_id,
+            question_id=str(test.inserted_id),
             title=question_data.title,
             description=question_data.description,
             tags=question_data.tags,
@@ -73,27 +78,30 @@ class QAService:
         )
 
         # Update tag statistics
-        await self._update_tag_stats(question_data.tags)
+        # await self._update_tag_stats(question_data.tags)
 
         # Update user statistics
-        await self._increment_user_stat(author_id, "questions_asked")
+        # await self._increment_user_stat(author_id, "questions_asked")
+        return await self.get_question_by_id(str(test.inserted_id))
 
-        return await self.get_question_by_id(question_id)
-
-    async def get_question_by_id(self, question_id: str, increment_view: bool = False) -> Optional[QuestionModel]:
+    async def get_question_by_id(
+        self, question_id: str, increment_view: bool = False
+    ) -> Optional[QuestionModel]:
         """Get a question by ID with all answers and comments."""
         if increment_view:
             await self.questions.update_one(
-                {"_id": question_id},
-                {"$inc": {"view_count": 1}}
+                {"_id": ObjectId(question_id)}, {"$inc": {"view_count": 1}}
             )
 
-        question_doc = await self.questions.find_one({"_id": question_id})
+        question_doc = await self.questions.find_one({"_id": ObjectId(question_id)})
+        print(f"{question_doc=}")
         if not question_doc:
             return None
 
         # Get author info
         author = await self._get_user_info(question_doc["author_id"])
+        print(f"{author=}")
+
         if not author:
             return None
 
@@ -101,7 +109,7 @@ class QAService:
         answers = await self._get_question_answers(question_id)
 
         return QuestionModel(
-            question_id=question_doc["_id"],
+            question_id=str(question_doc["_id"]),
             author=author,
             title=question_doc["title"],
             description=question_doc["description"],
@@ -115,9 +123,13 @@ class QAService:
             updated_at=question_doc.get("updated_at"),
         )
 
-    async def update_question(self, question_id: str, update_data: QuestionUpdateRequest, user_id: str) -> Optional[QuestionModel]:
+    async def update_question(
+        self, question_id: str, update_data: QuestionUpdateRequest, user_id: str
+    ) -> Optional[QuestionModel]:
         """Update a question (only by the author)."""
-        question_doc = await self.questions.find_one({"_id": question_id, "author_id": user_id})
+        question_doc = await self.questions.find_one(
+            {"_id": question_id, "author_id": user_id}
+        )
         if not question_doc:
             return None
 
@@ -134,8 +146,7 @@ class QAService:
         if update_fields:
             update_fields["updated_at"] = datetime.now(timezone.utc)
             await self.questions.update_one(
-                {"_id": question_id},
-                {"$set": update_fields}
+                {"_id": question_id}, {"$set": update_fields}
             )
 
             # Update in ChromaDB if title, description, or tags changed
@@ -156,7 +167,9 @@ class QAService:
 
     async def delete_question(self, question_id: str, user_id: str) -> bool:
         """Delete a question (only by the author)."""
-        question_doc = await self.questions.find_one({"_id": question_id, "author_id": user_id})
+        question_doc = await self.questions.find_one(
+            {"_id": question_id, "author_id": user_id}
+        )
         if not question_doc:
             return False
 
@@ -173,7 +186,9 @@ class QAService:
         result = await self.questions.delete_one({"_id": question_id})
         return result.deleted_count > 0
 
-    async def search_questions(self, search_request: QuestionSearchRequest) -> QuestionSearchResponse:
+    async def search_questions(
+        self, search_request: QuestionSearchRequest
+    ) -> QuestionSearchResponse:
         """Search questions with filters and pagination."""
 
         # Use semantic search if there's a query
@@ -203,7 +218,12 @@ class QAService:
         sort_direction = DESCENDING if search_request.order == "desc" else 1
 
         # Execute query
-        cursor = self.questions.find(filters).sort(sort_field, sort_direction).skip(skip).limit(search_request.limit)
+        cursor = (
+            self.questions.find(filters)
+            .sort(sort_field, sort_direction)
+            .skip(skip)
+            .limit(search_request.limit)
+        )
         question_docs = await cursor.to_list(length=search_request.limit)
 
         # Convert to response models
@@ -211,16 +231,18 @@ class QAService:
         for doc in question_docs:
             author = await self._get_user_info(doc["author_id"])
             if author:
-                questions.append(QuestionListModel(
-                    question_id=doc["_id"],
-                    author=author,
-                    title=doc["title"],
-                    tags=doc["tags"],
-                    view_count=doc["view_count"],
-                    answer_count=doc["answer_count"],
-                    has_accepted_answer=doc["has_accepted_answer"],
-                    created_at=doc["created_at"]
-                ))
+                questions.append(
+                    QuestionListModel(
+                        question_id=str(doc["_id"]),
+                        author=author,
+                        title=doc["title"],
+                        tags=doc["tags"],
+                        view_count=doc["view_count"],
+                        answer_count=doc["answer_count"],
+                        has_accepted_answer=doc["has_accepted_answer"],
+                        created_at=doc["created_at"],
+                    )
+                )
 
         return QuestionSearchResponse(
             questions=questions,
@@ -228,7 +250,7 @@ class QAService:
             page=search_request.page,
             limit=search_request.limit,
             has_next=skip + search_request.limit < total,
-            has_prev=search_request.page > 1
+            has_prev=search_request.page > 1,
         )
 
     async def _semantic_search_questions(
@@ -296,7 +318,7 @@ class QAService:
                 if author:
                     questions.append(
                         QuestionListModel(
-                            question_id=doc["_id"],
+                            question_id=str(doc["_id"]),
                             author=author,
                             title=doc["title"],
                             tags=doc["tags"],
@@ -318,7 +340,14 @@ class QAService:
             has_prev=search_request.page > 1,
         )
 
-    async def create_answer(self, question_id: str, answer_data: AnswerCreateRequest, author_id: str, author_name: str, author_email: str) -> Optional[AnswerModel]:
+    async def create_answer(
+        self,
+        question_id: str,
+        answer_data: AnswerCreateRequest,
+        author_id: str,
+        author_name: str,
+        author_email: str,
+    ) -> Optional[AnswerModel]:
         """Create an answer to a question."""
         # Check if question exists
         question = await self.questions.find_one({"_id": question_id})
@@ -355,8 +384,7 @@ class QAService:
 
         # Update question answer count
         await self.questions.update_one(
-            {"_id": question_id},
-            {"$inc": {"answer_count": 1}}
+            {"_id": question_id}, {"$inc": {"answer_count": 1}}
         )
 
         # Update user statistics
@@ -369,50 +397,50 @@ class QAService:
                 notification_type=NotificationType.QUESTION_ANSWERED,
                 title="New Answer",
                 message=f"{author_name} answered your question: {question['title']}",
-                related_id=question_id
+                related_id=question_id,
             )
 
         return await self._get_answer_by_id(answer_id)
 
-    async def vote_answer(self, answer_id: str, vote_data: VoteRequest, user_id: str) -> Optional[AnswerModel]:
+    async def vote_answer(
+        self, answer_id: str, vote_data: VoteRequest, user_id: str
+    ) -> Optional[AnswerModel]:
         """Vote on an answer."""
         answer = await self.answers.find_one({"_id": answer_id})
         if not answer:
             return None
 
         # Check if user already voted
-        existing_vote = await self.votes.find_one({"answer_id": answer_id, "user_id": user_id})
+        existing_vote = await self.votes.find_one(
+            {"answer_id": answer_id, "user_id": user_id}
+        )
 
         if existing_vote:
             # Update existing vote
             old_vote_type = existing_vote["vote_type"]
             await self.votes.update_one(
                 {"_id": existing_vote["_id"]},
-                {"$set": {"vote_type": vote_data.vote_type}}
+                {"$set": {"vote_type": vote_data.vote_type}},
             )
 
             # Update vote counts
             if old_vote_type != vote_data.vote_type:
                 if old_vote_type == VoteType.UPVOTE:
                     await self.answers.update_one(
-                        {"_id": answer_id},
-                        {"$inc": {"upvotes": -1, "vote_count": -1}}
+                        {"_id": answer_id}, {"$inc": {"upvotes": -1, "vote_count": -1}}
                     )
                 else:
                     await self.answers.update_one(
-                        {"_id": answer_id},
-                        {"$inc": {"downvotes": -1, "vote_count": 1}}
+                        {"_id": answer_id}, {"$inc": {"downvotes": -1, "vote_count": 1}}
                     )
 
                 if vote_data.vote_type == VoteType.UPVOTE:
                     await self.answers.update_one(
-                        {"_id": answer_id},
-                        {"$inc": {"upvotes": 1, "vote_count": 1}}
+                        {"_id": answer_id}, {"$inc": {"upvotes": 1, "vote_count": 1}}
                     )
                 else:
                     await self.answers.update_one(
-                        {"_id": answer_id},
-                        {"$inc": {"downvotes": 1, "vote_count": -1}}
+                        {"_id": answer_id}, {"$inc": {"downvotes": 1, "vote_count": -1}}
                     )
         else:
             # Create new vote
@@ -422,50 +450,51 @@ class QAService:
                 "answer_id": answer_id,
                 "user_id": user_id,
                 "vote_type": vote_data.vote_type,
-                "created_at": datetime.now(timezone.utc)
+                "created_at": datetime.now(timezone.utc),
             }
             await self.votes.insert_one(vote_doc)
 
             # Update vote counts
             if vote_data.vote_type == VoteType.UPVOTE:
                 await self.answers.update_one(
-                    {"_id": answer_id},
-                    {"$inc": {"upvotes": 1, "vote_count": 1}}
+                    {"_id": answer_id}, {"$inc": {"upvotes": 1, "vote_count": 1}}
                 )
             else:
                 await self.answers.update_one(
-                    {"_id": answer_id},
-                    {"$inc": {"downvotes": 1, "vote_count": -1}}
+                    {"_id": answer_id}, {"$inc": {"downvotes": 1, "vote_count": -1}}
                 )
 
         return await self._get_answer_by_id(answer_id)
 
-    async def accept_answer(self, question_id: str, answer_id: str, user_id: str) -> bool:
+    async def accept_answer(
+        self, question_id: str, answer_id: str, user_id: str
+    ) -> bool:
         """Accept an answer (only by question owner)."""
-        question = await self.questions.find_one({"_id": question_id, "author_id": user_id})
+        question = await self.questions.find_one(
+            {"_id": question_id, "author_id": user_id}
+        )
         if not question:
             return False
 
-        answer = await self.answers.find_one({"_id": answer_id, "question_id": question_id})
+        answer = await self.answers.find_one(
+            {"_id": answer_id, "question_id": question_id}
+        )
         if not answer:
             return False
 
         # Unaccept all other answers for this question
         await self.answers.update_many(
-            {"question_id": question_id},
-            {"$set": {"is_accepted": False}}
+            {"question_id": question_id}, {"$set": {"is_accepted": False}}
         )
 
         # Accept this answer
         await self.answers.update_one(
-            {"_id": answer_id},
-            {"$set": {"is_accepted": True}}
+            {"_id": answer_id}, {"$set": {"is_accepted": True}}
         )
 
         # Update question
         await self.questions.update_one(
-            {"_id": question_id},
-            {"$set": {"has_accepted_answer": True}}
+            {"_id": question_id}, {"$set": {"has_accepted_answer": True}}
         )
 
         # Update user statistics
@@ -478,43 +507,53 @@ class QAService:
                 notification_type=NotificationType.ANSWER_ACCEPTED,
                 title="Answer Accepted",
                 message=f"Your answer was accepted for: {question['title']}",
-                related_id=question_id
+                related_id=question_id,
             )
 
         return True
 
-    async def get_user_notifications(self, user_id: str, limit: int = 20, offset: int = 0) -> List[NotificationModel]:
+    async def get_user_notifications(
+        self, user_id: str, limit: int = 20, offset: int = 0
+    ) -> List[NotificationModel]:
         """Get user notifications."""
-        cursor = self.notifications.find({"user_id": user_id}).sort("created_at", DESCENDING).skip(offset).limit(limit)
+        cursor = (
+            self.notifications.find({"user_id": user_id})
+            .sort("created_at", DESCENDING)
+            .skip(offset)
+            .limit(limit)
+        )
         notification_docs = await cursor.to_list(length=limit)
 
         notifications = []
         for doc in notification_docs:
-            notifications.append(NotificationModel(
-                notification_id=doc["_id"],
-                user_id=doc["user_id"],
-                type=doc["type"],
-                title=doc["title"],
-                message=doc["message"],
-                related_id=doc.get("related_id"),
-                is_read=doc["is_read"],
-                created_at=doc["created_at"]
-            ))
+            notifications.append(
+                NotificationModel(
+                    notification_id=doc["_id"],
+                    user_id=doc["user_id"],
+                    type=doc["type"],
+                    title=doc["title"],
+                    message=doc["message"],
+                    related_id=doc.get("related_id"),
+                    is_read=doc["is_read"],
+                    created_at=doc["created_at"],
+                )
+            )
 
         return notifications
 
     async def mark_notification_read(self, notification_id: str, user_id: str) -> bool:
         """Mark a notification as read."""
         result = await self.notifications.update_one(
-            {"_id": notification_id, "user_id": user_id},
-            {"$set": {"is_read": True}}
+            {"_id": notification_id, "user_id": user_id}, {"$set": {"is_read": True}}
         )
         return result.modified_count > 0
 
     async def get_notification_count(self, user_id: str) -> Dict[str, int]:
         """Get notification counts for a user."""
         total = await self.notifications.count_documents({"user_id": user_id})
-        unread = await self.notifications.count_documents({"user_id": user_id, "is_read": False})
+        unread = await self.notifications.count_documents(
+            {"user_id": user_id, "is_read": False}
+        )
 
         return {"total": total, "unread": unread}
 
@@ -522,28 +561,29 @@ class QAService:
         self, answer_id: str, answer_data: AnswerUpdateRequest, user_id: str
     ) -> Optional[AnswerModel]:
         """Update an answer (only by the author)."""
-        answer_doc = await self.answers.find_one({"_id": answer_id, "author_id": user_id})
+        answer_doc = await self.answers.find_one(
+            {"_id": answer_id, "author_id": user_id}
+        )
         if not answer_doc:
             return None
 
         update_fields = {
             "content": answer_data.content,
-            "updated_at": datetime.now(timezone.utc)
+            "updated_at": datetime.now(timezone.utc),
         }
 
         if answer_data.images is not None:
             update_fields["images"] = answer_data.images
 
-        await self.answers.update_one(
-            {"_id": answer_id},
-            {"$set": update_fields}
-        )
+        await self.answers.update_one({"_id": answer_id}, {"$set": update_fields})
 
         return await self._get_answer_by_id(answer_id)
 
     async def delete_answer(self, answer_id: str, user_id: str) -> bool:
         """Delete an answer (only by the author)."""
-        answer_doc = await self.answers.find_one({"_id": answer_id, "author_id": user_id})
+        answer_doc = await self.answers.find_one(
+            {"_id": answer_id, "author_id": user_id}
+        )
         if not answer_doc:
             return False
 
@@ -563,8 +603,7 @@ class QAService:
         if result.deleted_count > 0:
             # Update question answer count
             await self.questions.update_one(
-                {"_id": question_id},
-                {"$inc": {"answer_count": -1}}
+                {"_id": question_id}, {"$inc": {"answer_count": -1}}
             )
             return True
 
@@ -572,7 +611,9 @@ class QAService:
 
     async def remove_vote(self, answer_id: str, user_id: str) -> bool:
         """Remove a user's vote from an answer."""
-        vote_doc = await self.votes.find_one({"answer_id": answer_id, "user_id": user_id})
+        vote_doc = await self.votes.find_one(
+            {"answer_id": answer_id, "user_id": user_id}
+        )
         if not vote_doc:
             return False
 
@@ -589,15 +630,20 @@ class QAService:
             else:
                 update_fields["downvotes"] = -1
 
-            await self.answers.update_one(
-                {"_id": answer_id},
-                {"$inc": update_fields}
-            )
+            await self.answers.update_one({"_id": answer_id}, {"$inc": update_fields})
             return True
 
         return False
 
-    async def create_comment(self, answer_id: str, comment_data: CommentCreateRequest, author_id: str, author_name: str, author_email: str) -> Optional[CommentModel]:
+    async def create_comment(
+        self,
+        answer_id: str,
+        comment_data: CommentCreateRequest,
+        author_id: str,
+        author_name: str,
+        author_email: str,
+        author_picture: str,
+    ) -> Optional[CommentModel]:
         """Create a comment on an answer."""
         # Verify answer exists
         answer_doc = await self.answers.find_one({"_id": answer_id})
@@ -610,7 +656,7 @@ class QAService:
             "answer_id": answer_id,
             "author_id": author_id,
             "content": comment_data.content,
-            "created_at": datetime.now(timezone.utc)
+            "created_at": datetime.now(timezone.utc),
         }
 
         await self.comments.insert_one(comment_doc)
@@ -622,14 +668,15 @@ class QAService:
                 notification_type=NotificationType.ANSWER_COMMENTED,
                 title="New comment on your answer",
                 message=f"{author_name} commented on your answer",
-                related_id=answer_id
+                related_id=answer_id,
             )
 
         # Return the comment
         author = QuestionAuthorModel(
             user_id=author_id,
             name=author_name,
-            email=author_email
+            email=author_email,
+            picture=author_picture,
         )
 
         return CommentModel(
@@ -637,12 +684,14 @@ class QAService:
             answer_id=answer_id,
             author=author,
             content=comment_data.content,
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.now(timezone.utc),
         )
 
     async def delete_comment(self, comment_id: str, user_id: str) -> bool:
         """Delete a comment (only by the author)."""
-        comment_doc = await self.comments.find_one({"_id": comment_id, "author_id": user_id})
+        comment_doc = await self.comments.find_one(
+            {"_id": comment_id, "author_id": user_id}
+        )
         if not comment_doc:
             return False
 
@@ -652,8 +701,7 @@ class QAService:
     async def mark_all_notifications_read(self, user_id: str) -> int:
         """Mark all notifications as read for a user."""
         result = await self.notifications.update_many(
-            {"user_id": user_id, "is_read": False},
-            {"$set": {"is_read": True}}
+            {"user_id": user_id, "is_read": False}, {"$set": {"is_read": True}}
         )
         return result.modified_count
 
@@ -661,13 +709,14 @@ class QAService:
     async def _get_user_info(self, user_id: str) -> Optional[QuestionAuthorModel]:
         """Get user information from users collection."""
         user_collection = self.db.get_collection("users")
-        user = await user_collection.find_one({"_id": user_id})
+        user = await user_collection.find_one({"_id": ObjectId(user_id)})
 
         if user:
             return QuestionAuthorModel(
-                user_id=user["_id"],
+                user_id=str(user["_id"]),
                 name=user["name"],
-                email=user["email"]
+                email=user["email"],
+                picture=user.get("picture", ""),
             )
         return None
 
@@ -721,18 +770,27 @@ class QAService:
         for doc in comment_docs:
             author = await self._get_user_info(doc["author_id"])
             if author:
-                comments.append(CommentModel(
-                    comment_id=doc["_id"],
-                    answer_id=doc["answer_id"],
-                    author=author,
-                    content=doc["content"],
-                    created_at=doc["created_at"],
-                    updated_at=doc.get("updated_at")
-                ))
+                comments.append(
+                    CommentModel(
+                        comment_id=doc["_id"],
+                        answer_id=doc["answer_id"],
+                        author=author,
+                        content=doc["content"],
+                        created_at=doc["created_at"],
+                        updated_at=doc.get("updated_at"),
+                    )
+                )
 
         return comments
 
-    async def _create_notification(self, user_id: str, notification_type: NotificationType, title: str, message: str, related_id: Optional[str] = None):
+    async def _create_notification(
+        self,
+        user_id: str,
+        notification_type: NotificationType,
+        title: str,
+        message: str,
+        related_id: Optional[str] = None,
+    ):
         """Create a notification."""
         notification_id = str(uuid.uuid4())
         notification_doc = {
@@ -743,7 +801,7 @@ class QAService:
             "message": message,
             "related_id": related_id,
             "is_read": False,
-            "created_at": datetime.now(timezone.utc)
+            "created_at": datetime.now(timezone.utc),
         }
 
         await self.notifications.insert_one(notification_doc)
@@ -755,17 +813,15 @@ class QAService:
                 {"name": tag},
                 {
                     "$inc": {"count": 1},
-                    "$set": {"updated_at": datetime.now(timezone.utc)}
+                    "$set": {"updated_at": datetime.now(timezone.utc)},
                 },
-                upsert=True
+                upsert=True,
             )
 
     async def _increment_user_stat(self, user_id: str, field: str, amount: int = 1):
         """Increment a user statistic."""
         await self.user_stats.update_one(
-            {"user_id": user_id},
-            {"$inc": {field: amount}},
-            upsert=True
+            {"user_id": user_id}, {"$inc": {field: amount}}, upsert=True
         )
 
     async def get_similar_questions(
@@ -800,7 +856,7 @@ class QAService:
                 if author:
                     questions.append(
                         QuestionListModel(
-                            question_id=doc["_id"],
+                            question_id=str(doc["_id"]),
                             author=author,
                             title=doc["title"],
                             tags=doc["tags"],
@@ -832,7 +888,7 @@ class QAService:
                         question_results.append(
                             {
                                 "question": QuestionListModel(
-                                    question_id=question_doc["_id"],
+                                    question_id=str(question_doc["_id"]),
                                     author=author,
                                     title=question_doc["title"],
                                     tags=question_doc["tags"],

@@ -1,7 +1,7 @@
-"use client"
+"use client";
 
 import { NotificationDropdown } from "@/components/notifications/notification-dropdown";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -91,11 +91,6 @@ export function Header({}: HeaderProps) {
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               disabled={!mounted}
             >
-              {mounted && theme === "dark" ? (
-                <Sun className="h-5 w-5" />
-              ) : (
-                <Moon className="h-5 w-5" />
-              )}
               {mounted && theme === "dark" ? (
                 <Sun className="h-5 w-5" />
               ) : (
