@@ -347,3 +347,25 @@ async def mark_all_notifications_read(
     count = await qa_service.mark_all_notifications_read(current_user.user_id)
 
     return {"message": f"Marked {count} notifications as read"}
+
+
+@router.get("/questions/{question_id}/similar")
+async def get_similar_questions(
+    question_id: str,
+    limit: int = Query(
+        5, ge=1, le=20, description="Number of similar questions to retrieve"
+    ),
+):
+    """Get questions similar to the given question using semantic search."""
+    similar_questions = await qa_service.get_similar_questions(question_id, limit)
+    return {"similar_questions": similar_questions}
+
+
+@router.get("/search/semantic")
+async def semantic_search(
+    query: str = Query(..., description="Search query for semantic search"),
+    limit: int = Query(20, ge=1, le=100, description="Maximum number of results"),
+):
+    """Perform semantic search across questions and answers."""
+    results = await qa_service.semantic_search_all(query, limit)
+    return results

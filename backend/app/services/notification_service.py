@@ -64,10 +64,6 @@ class NotificationService:
                 notification_data.user_id, notification_data.type
             )
 
-            # Send email notification if enabled and user preferences allow it
-            if send_email:
-                await self._send_email_notification(notification_data)
-
             return NotificationModel(
                 notification_id=notification_id,
                 user_id=notification_data.user_id,
@@ -445,65 +441,6 @@ class NotificationService:
         )
 
         return await self.create_notification(notification_request)
-
-    async def _send_email_notification(
-        self, notification_data: NotificationCreateRequest
-    ) -> None:
-        """Send email notification if user preferences allow it."""
-        try:
-            # Import here to avoid circular imports
-            from app.services.email_service import email_notification_service
-
-            # Get user preferences
-            preferences = await self.get_user_preferences(notification_data.user_id)
-
-            # Check if user wants email notifications for this type
-            if not preferences or not preferences.email_notifications:
-                return
-
-            if (
-                preferences.notification_types
-                and notification_data.type not in preferences.notification_types
-            ):
-                return
-
-            # Get user email and name
-            user_info = await self._get_user_info(notification_data.user_id)
-            if not user_info:
-                return
-
-            # Send appropriate email based on notification type
-            if notification_data.type == NotificationType.QUESTION_ANSWERED:
-                await email_notification_service.send_notification_email(
-                    to_email=user_info.get("email", ""),
-                    to_name=user_info.get("name", "User"),
-                    subject=notification_data.title,
-                    message=notification_data.message,
-                    notification_type=notification_data.type.value,
-                    action_url=notification_data.action_url,
-                )
-            elif notification_data.type == NotificationType.ANSWER_ACCEPTED:
-                await email_notification_service.send_notification_email(
-                    to_email=user_info.get("email", ""),
-                    to_name=user_info.get("name", "User"),
-                    subject=notification_data.title,
-                    message=notification_data.message,
-                    notification_type=notification_data.type.value,
-                    action_url=notification_data.action_url,
-                )
-            else:
-                # Generic email for other notification types
-                await email_notification_service.send_notification_email(
-                    to_email=user_info.get("email", ""),
-                    to_name=user_info.get("name", "User"),
-                    subject=notification_data.title,
-                    message=notification_data.message,
-                    notification_type=notification_data.type.value,
-                    action_url=notification_data.action_url,
-                )
-
-        except Exception as e:
-            print(f"Error sending email notification: {e}")
 
     async def _get_user_info(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Get user information for email notifications."""

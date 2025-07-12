@@ -19,3 +19,4 @@ router.include_router(images.router, prefix="/images", tags=["Images"])
 router.include_router(
     notifications.router, prefix="/notifications", tags=["Notifications"]
 )
+

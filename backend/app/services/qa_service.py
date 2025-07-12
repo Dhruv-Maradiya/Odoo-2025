@@ -25,6 +25,7 @@ from app.models.qa_models import (
     VoteRequest,
     VoteType,
 )
+from app.services.chromadb_service import chromadb_service
 from pymongo import DESCENDING
 
 
@@ -61,6 +62,15 @@ class QAService:
         }
 
         await self.questions.insert_one(question_doc)
+
+        # Add to ChromaDB for semantic search
+        await chromadb_service.add_question(
+            question_id=question_id,
+            title=question_data.title,
+            description=question_data.description,
+            tags=question_data.tags,
+            author_id=author_id,
+        )
 
         # Update tag statistics
         await self._update_tag_stats(question_data.tags)
@@ -128,6 +138,20 @@ class QAService:
                 {"$set": update_fields}
             )
 
+            # Update in ChromaDB if title, description, or tags changed
+            if any(
+                field in update_fields for field in ["title", "description", "tags"]
+            ):
+                # Get updated question doc
+                updated_question = await self.questions.find_one({"_id": question_id})
+                if updated_question:
+                    await chromadb_service.update_question(
+                        question_id=question_id,
+                        title=updated_question["title"],
+                        description=updated_question["description"],
+                        tags=updated_question["tags"],
+                    )
+
         return await self.get_question_by_id(question_id)
 
     async def delete_question(self, question_id: str, user_id: str) -> bool:
@@ -142,16 +166,22 @@ class QAService:
         await self.comments.delete_many({"question_id": question_id})
         await self.notifications.delete_many({"related_id": question_id})
 
+        # Delete from ChromaDB
+        await chromadb_service.delete_question(question_id)
+
         # Delete the question
         result = await self.questions.delete_one({"_id": question_id})
         return result.deleted_count > 0
 
     async def search_questions(self, search_request: QuestionSearchRequest) -> QuestionSearchResponse:
         """Search questions with filters and pagination."""
-        filters: Dict[str, Any] = {}
 
+        # Use semantic search if there's a query
         if search_request.query:
-            filters["$text"] = {"$search": search_request.query}
+            return await self._semantic_search_questions(search_request)
+
+        # Traditional MongoDB search for non-query searches
+        filters: Dict[str, Any] = {}
 
         if search_request.tags:
             filters["tags"] = {"$in": search_request.tags}
@@ -201,6 +231,93 @@ class QAService:
             has_prev=search_request.page > 1
         )
 
+    async def _semantic_search_questions(
+        self, search_request: QuestionSearchRequest
+    ) -> QuestionSearchResponse:
+        """Perform semantic search using ChromaDB."""
+
+        # Ensure we have a query
+        if not search_request.query:
+            return QuestionSearchResponse(
+                questions=[],
+                total=0,
+                page=search_request.page,
+                limit=search_request.limit,
+                has_next=False,
+                has_prev=False,
+            )
+
+        # Perform semantic search
+        semantic_results = await chromadb_service.semantic_search(
+            query=search_request.query,
+            limit=search_request.limit * 3,  # Get more results to filter
+            question_only=True,
+            tags_filter=search_request.tags,
+        )
+
+        # Extract question IDs from semantic results
+        question_ids = [result["id"] for result in semantic_results]
+
+        if not question_ids:
+            return QuestionSearchResponse(
+                questions=[],
+                total=0,
+                page=search_request.page,
+                limit=search_request.limit,
+                has_next=False,
+                has_prev=False,
+            )
+
+        # Build additional filters
+        filters: Dict[str, Any] = {"_id": {"$in": question_ids}}
+
+        if search_request.author_id:
+            filters["author_id"] = search_request.author_id
+
+        if search_request.has_accepted_answer is not None:
+            filters["has_accepted_answer"] = search_request.has_accepted_answer
+
+        # Get question documents from MongoDB
+        question_docs = await self.questions.find(filters).to_list(length=None)
+
+        # Create a mapping for quick lookup
+        question_map = {doc["_id"]: doc for doc in question_docs}
+
+        # Sort by semantic similarity and apply pagination
+        start_idx = (search_request.page - 1) * search_request.limit
+        end_idx = start_idx + search_request.limit
+
+        questions = []
+        for result in semantic_results[start_idx:end_idx]:
+            question_id = result["id"]
+            if question_id in question_map:
+                doc = question_map[question_id]
+                author = await self._get_user_info(doc["author_id"])
+                if author:
+                    questions.append(
+                        QuestionListModel(
+                            question_id=doc["_id"],
+                            author=author,
+                            title=doc["title"],
+                            tags=doc["tags"],
+                            view_count=doc["view_count"],
+                            answer_count=doc["answer_count"],
+                            has_accepted_answer=doc["has_accepted_answer"],
+                            created_at=doc["created_at"],
+                        )
+                    )
+
+        total_semantic_results = len(semantic_results)
+
+        return QuestionSearchResponse(
+            questions=questions,
+            total=total_semantic_results,
+            page=search_request.page,
+            limit=search_request.limit,
+            has_next=end_idx < total_semantic_results,
+            has_prev=search_request.page > 1,
+        )
+
     async def create_answer(self, question_id: str, answer_data: AnswerCreateRequest, author_id: str, author_name: str, author_email: str) -> Optional[AnswerModel]:
         """Create an answer to a question."""
         # Check if question exists
@@ -226,6 +343,15 @@ class QAService:
         }
 
         await self.answers.insert_one(answer_doc)
+
+        # Add to ChromaDB for semantic search
+        await chromadb_service.add_answer(
+            answer_id=answer_id,
+            question_id=question_id,
+            content=answer_data.content,
+            author_id=author_id,
+            question_title=question.get("title", ""),
+        )
 
         # Update question answer count
         await self.questions.update_one(
@@ -427,6 +553,9 @@ class QAService:
         await self.votes.delete_many({"answer_id": answer_id})
         await self.comments.delete_many({"answer_id": answer_id})
         await self.notifications.delete_many({"related_id": answer_id})
+
+        # Delete from ChromaDB
+        await chromadb_service.delete_answer(answer_id)
 
         # Delete the answer
         result = await self.answers.delete_one({"_id": answer_id})
@@ -638,6 +767,106 @@ class QAService:
             {"$inc": {field: amount}},
             upsert=True
         )
+
+    async def get_similar_questions(
+        self, question_id: str, limit: int = 5
+    ) -> List[QuestionListModel]:
+        """Get questions similar to the given question using semantic search."""
+        similar_results = await chromadb_service.get_similar_questions(
+            question_id=question_id, limit=limit
+        )
+
+        if not similar_results:
+            return []
+
+        # Get question IDs from results
+        question_ids = [result["id"] for result in similar_results]
+
+        # Get question documents from MongoDB
+        question_docs = await self.questions.find(
+            {"_id": {"$in": question_ids}}
+        ).to_list(length=None)
+
+        # Create a mapping for quick lookup
+        question_map = {doc["_id"]: doc for doc in question_docs}
+
+        # Build response maintaining the similarity order
+        questions = []
+        for result in similar_results:
+            question_id = result["id"]
+            if question_id in question_map:
+                doc = question_map[question_id]
+                author = await self._get_user_info(doc["author_id"])
+                if author:
+                    questions.append(
+                        QuestionListModel(
+                            question_id=doc["_id"],
+                            author=author,
+                            title=doc["title"],
+                            tags=doc["tags"],
+                            view_count=doc["view_count"],
+                            answer_count=doc["answer_count"],
+                            has_accepted_answer=doc["has_accepted_answer"],
+                            created_at=doc["created_at"],
+                        )
+                    )
+
+        return questions
+
+    async def semantic_search_all(self, query: str, limit: int = 20) -> Dict[str, List]:
+        """Perform semantic search across both questions and answers."""
+        results = await chromadb_service.semantic_search(
+            query=query, limit=limit, question_only=False
+        )
+
+        question_results = []
+        answer_results = []
+
+        for result in results:
+            if result["metadata"].get("type") == "question":
+                question_id = result["id"]
+                question_doc = await self.questions.find_one({"_id": question_id})
+                if question_doc:
+                    author = await self._get_user_info(question_doc["author_id"])
+                    if author:
+                        question_results.append(
+                            {
+                                "question": QuestionListModel(
+                                    question_id=question_doc["_id"],
+                                    author=author,
+                                    title=question_doc["title"],
+                                    tags=question_doc["tags"],
+                                    view_count=question_doc["view_count"],
+                                    answer_count=question_doc["answer_count"],
+                                    has_accepted_answer=question_doc[
+                                        "has_accepted_answer"
+                                    ],
+                                    created_at=question_doc["created_at"],
+                                ),
+                                "similarity_score": result["similarity_score"],
+                            }
+                        )
+
+            elif result["metadata"].get("type") == "answer":
+                answer_id = result["id"]
+                answer_doc = await self.answers.find_one({"_id": answer_id})
+                if answer_doc:
+                    author = await self._get_user_info(answer_doc["author_id"])
+                    if author:
+                        answer_results.append(
+                            {
+                                "answer": {
+                                    "answer_id": answer_doc["_id"],
+                                    "question_id": answer_doc["question_id"],
+                                    "author": author,
+                                    "content": answer_doc["content"],
+                                    "created_at": answer_doc["created_at"],
+                                },
+                                "similarity_score": result["similarity_score"],
+                            }
+                        )
+
+        return {"questions": question_results, "answers": answer_results}
 
 
 # Global service instance

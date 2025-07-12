@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     # Databases
     MONGO_DB: str
     REDIS_URL: str
+    CHROMADB_HOST: str = "http://chromadb:8000"
 
     # Authentication
     JWT_SECRET_KEY: str
@@ -27,7 +28,6 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3000"
 
     # Email & Notifications
-    RESEND_API_KEY: str = ""
     FROM_EMAIL: str = "noreply@example.com"
     EMAIL_NOTIFICATIONS_ENABLED: bool = True
 

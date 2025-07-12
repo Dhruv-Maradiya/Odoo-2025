@@ -202,3 +202,78 @@ class ChangePasswordRequest(BaseModel):
         if not re.search(r"\d", v):
             raise ValueError("Password must contain at least one number")
         return v
+
+
+class SavedPostType(str, Enum):
+    """Type of saved post."""
+
+    QUESTION = "question"
+    ANSWER = "answer"
+
+
+class SavedPostModel(BaseModel):
+    """Model for a saved post."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    saved_id: str = Field(..., description="Unique identifier for the saved post")
+    user_id: str = Field(..., description="ID of the user who saved the post")
+    post_id: str = Field(..., description="ID of the saved question or answer")
+    post_type: SavedPostType = Field(..., description="Type of the saved post")
+    saved_at: datetime = Field(..., description="When the post was saved")
+    notes: Optional[str] = Field(
+        None, description="Optional user notes about the saved post"
+    )
+
+
+class SavePostRequest(BaseModel):
+    """Request to save a post."""
+
+    post_id: str = Field(..., description="ID of the question or answer to save")
+    post_type: SavedPostType = Field(..., description="Type of the post to save")
+    notes: Optional[str] = Field(
+        None, max_length=500, description="Optional notes about the saved post"
+    )
+
+
+class UpdateSavedPostRequest(BaseModel):
+    """Request to update a saved post."""
+
+    notes: Optional[str] = Field(
+        None, max_length=500, description="Updated notes about the saved post"
+    )
+
+
+class SavedPostWithContent(BaseModel):
+    """Saved post with the actual content."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    saved_id: str = Field(..., description="Unique identifier for the saved post")
+    user_id: str = Field(..., description="ID of the user who saved the post")
+    post_id: str = Field(..., description="ID of the saved question or answer")
+    post_type: SavedPostType = Field(..., description="Type of the saved post")
+    saved_at: datetime = Field(..., description="When the post was saved")
+    notes: Optional[str] = Field(None, description="User notes about the saved post")
+
+    # Content fields (populated based on post_type)
+    title: Optional[str] = Field(
+        None, description="Title of the question (if post_type is question)"
+    )
+    content: str = Field(..., description="Content of the question/answer")
+    author_name: str = Field(..., description="Name of the post author")
+    created_at: datetime = Field(..., description="When the original post was created")
+    tags: Optional[List[str]] = Field(
+        None, description="Tags of the question (if applicable)"
+    )
+
+
+class SavedPostsResponse(BaseModel):
+    """Response for saved posts list."""
+
+    saved_posts: List[SavedPostWithContent]
+    total: int
+    page: int
+    limit: int
+    has_next: bool
+    has_prev: bool
