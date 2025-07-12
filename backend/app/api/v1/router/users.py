@@ -10,7 +10,7 @@ from app.api.v1.dependencies import (
 )
 from app.db.mongodb.collections import users_collection
 from app.models.image_models import ImageUploadRequest
-from app.models.user_models import CurrentUserModel, UserRole
+from app.models.user_models import CurrentUserModel, UserRole, UserUpdateRequest
 from app.services.image_service import image_service
 from app.services.user_service import get_user_by_id
 from bson import ObjectId
@@ -267,4 +267,95 @@ async def update_user(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update user",
+        )
+
+
+@router.put("/me", response_model=dict)
+async def update_my_profile(
+    user_data: UserUpdateRequest,
+    current_user: CurrentUserModel = Depends(get_current_user),
+):
+    """Update current user's profile information."""
+    try:
+        # Prepare update data
+        update_dict = user_data.model_dump(exclude_unset=True)
+
+        if not update_dict:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No valid fields to update",
+            )
+
+        # Update user in database
+        result = await users_collection.update_one(
+            {"_id": ObjectId(current_user.user_id)}, {"$set": update_dict}
+        )
+
+        if result.modified_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found or no changes made",
+            )
+
+        return {"message": "Profile updated successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update profile: {str(e)}",
+        )
+
+
+@router.post("/me/upload-avatar", response_model=dict)
+async def upload_my_avatar(
+    file: UploadFile = File(...),
+    current_user: CurrentUserModel = Depends(get_current_user),
+):
+    """Upload current user's profile picture."""
+    try:
+        # Validate file type
+        if not file.content_type or not file.content_type.startswith("image/"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="File must be an image"
+            )
+
+        # Upload image
+        upload_data = await image_service.upload_image(
+            file=file,
+            upload_request=ImageUploadRequest(
+                upload_type="profile", related_id=current_user.user_id
+            ),
+            user_id=current_user.user_id,
+        )
+
+        if not upload_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to upload image"
+            )
+
+        # Update user with new image URL
+        result = await users_collection.update_one(
+            {"_id": ObjectId(current_user.user_id)},
+            {"$set": {"picture": upload_data.url}},
+        )
+
+        if result.modified_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Failed to update user profile picture",
+            )
+
+        return {
+            "message": "Profile picture uploaded successfully",
+            "image_url": upload_data.url,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload profile picture: {str(e)}",
         )
