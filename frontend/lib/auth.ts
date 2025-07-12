@@ -1,7 +1,6 @@
 import { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { apiClient } from "@/lib/api-client";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -20,21 +19,30 @@ export const authOptions: NextAuthOptions = {
         if (!credentials?.email || !credentials?.password) {
           return null;
         }
-
         try {
-          const response = await apiClient.login({
-            email: credentials.email,
-            password: credentials.password,
-          });
-
-          if (response.access_token && response.user) {
+          // Use FastAPI backend for login
+          const response = await fetch(
+            `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1"}/auth/login`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                email: credentials.email,
+                password: credentials.password,
+              }),
+            }
+          );
+          if (!response.ok) return null;
+          const data = await response.json();
+          if (data.access_token && data.user) {
             return {
-              id: response.user.id,
-              name: response.user.name,
-              email: response.user.email,
-              accessToken: response.access_token,
-              refreshToken: response.refresh_token,
-              role: response.user.role,
+              id: data.user.id,
+              name: data.user.name,
+              email: data.user.email,
+              accessToken: data.access_token,
+              refreshToken: data.refresh_token,
+              role: data.user.role,
+              picture: data.user.picture,
             };
           }
           return null;
@@ -50,24 +58,36 @@ export const authOptions: NextAuthOptions = {
   },
   callbacks: {
     async jwt({ token, user, account }) {
-      // Initial sign in
       if (account && user) {
         token.id = user.id;
-        token.accessToken = (user as any).accessToken || account.access_token;
-        token.refreshToken =
-          (user as any).refreshToken || account.refresh_token;
-        token.role = (user as any).role;
+        token.accessToken = user.accessToken;
+        token.refreshToken = user.refreshToken;
+        token.role = user.role;
+        token.picture = user.picture;
       }
       return token;
     },
     async session({ session, token }) {
       if (token && session.user) {
-        session.user.id = token.id as string;
-        session.accessToken = token.accessToken as string;
-        session.refreshToken = token.refreshToken as string;
-        session.user.role = token.role as string;
+        session.user.id = token.id ?? "";
+        session.accessToken = token.accessToken ?? "";
+        session.refreshToken = token.refreshToken ?? "";
+        session.user.role = token.role ?? "user";
+        session.user.picture = token.picture ?? null;
       }
       return session;
+    },
+    async redirect({ url, baseUrl }) {
+      if (url.includes("/auth/login") || url.includes("/auth/register")) {
+        return baseUrl;
+      }
+      if (url.startsWith("/")) {
+        return `${baseUrl}${url}`;
+      }
+      if (new URL(url).origin === baseUrl) {
+        return url;
+      }
+      return baseUrl;
     },
   },
   session: {

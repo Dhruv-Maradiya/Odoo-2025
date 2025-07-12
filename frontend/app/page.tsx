@@ -1,111 +1,220 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
 import { Header } from "@/components/layout/header";
+import { MainLayout } from "@/components/layout/main-layout";
 import { QuestionCard } from "@/components/questions/question-card";
-import { QuestionFilters } from "@/components/questions/question-filters";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-
-const mockQuestions = [
-  {
-    id: 1,
-    title:
-      "How to join 2 columns in a data set to make a separate column in SQL",
-    description:
-      "I do not know the code for it as I am a beginner. As an example what I need to do is like there is a column 1 containing First name and column 2 consists of last name I want a column to combine both first name and last name to make a separate column containing full name.",
-    tags: ["SQL", "Database", "Beginner"],
-    author: "john_doe",
-    answers: 5,
-    votes: 12,
-    createdAt: "2 hours ago",
-  },
-  {
-    id: 2,
-    title: "React useState not updating immediately - Why does this happen?",
-    description:
-      "I'm having trouble with useState not updating the state immediately when I call the setter function. The component doesn't re-render with the new value right away. Can someone explain why this happens and how to fix it?",
-    tags: ["React", "JavaScript", "Hooks", "State Management"],
-    author: "react_dev",
-    answers: 3,
-    votes: 8,
-    createdAt: "4 hours ago",
-    bookmarked: true,
-  },
-  {
-    id: 3,
-    title: "Best practices for JWT authentication in Node.js applications",
-    description:
-      "What are the security considerations when implementing JWT authentication in a Node.js application? I want to make sure I'm following industry standards and not introducing vulnerabilities.",
-    tags: ["JWT", "Node.js", "Security", "Authentication"],
-    author: "security_expert",
-    answers: 2,
-    votes: 15,
-    createdAt: "1 day ago",
-  },
-];
+import { Skeleton } from "@/components/ui/skeleton";
+import { getApiClient } from "@/lib/api-client";
+import { useSearch } from "@/contexts/search-context";
+import type {
+  QuestionSearchRequest,
+  QuestionSearchResponse,
+} from "@/types/api";
+import { useSession } from "next-auth/react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 
 export default function HomePage() {
-  const [sortBy, setSortBy] = useState("newest");
-  const [activeFilters, setActiveFilters] = useState<string[]>(["hot"]);
+  const [sortBy, setSortBy] = useState("created_at");
+  const [order, setOrder] = useState<"asc" | "desc">("desc");
+  const [activeFilters, setActiveFilters] = useState<string[]>([]);
+  const [page, setPage] = useState(1);
+  const { data: session } = useSession();
+  const { searchQuery, hasSearched } = useSearch();
 
-  const handleFilterToggle = (filter: string) => {
-    setActiveFilters((prev) =>
-      prev.includes(filter)
-        ? prev.filter((f) => f !== filter)
-        : [...prev, filter]
-    );
+  const [questionsResponse, setQuestionsResponse] =
+    useState<QuestionSearchResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  // Build search params (no query since search is handled by search context)
+  const searchParams: QuestionSearchRequest = {
+    sort_by: sortBy,
+    order,
+    page,
+    limit: 20,
+    // Add filter logic based on activeFilters
+    has_accepted_answer: activeFilters.includes("answered")
+      ? true
+      : activeFilters.includes("unanswered")
+        ? false
+        : undefined,
   };
 
-  return (
-    <div className="min-h-screen bg-background">
-      <Header />
+  // Fetch questions with authentication - only when not searching
+  useEffect(() => {
+    // Don't fetch if there's an active search (search results will be shown by MainLayout)
+    if (hasSearched && searchQuery.trim()) {
+      return;
+    }
 
-      <main className="container mx-auto px-4 py-6 max-w-7xl">
-        {/* Action Bar */}
-        <div className="flex flex-col sm:flex-row gap-4 mb-6">
-          <Link href="/ask" className="w-full sm:w-auto">
-            <Button className="w-full sm:w-auto">Ask New Question</Button>
-          </Link>
-        </div>
+    const fetchQuestions = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const apiClient = getApiClient(session?.accessToken);
+        const result = await apiClient.getQuestions(searchParams);
+        setQuestionsResponse(result);
+      } catch (err) {
+        setError(err as Error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-        {/* Filters */}
-        <QuestionFilters
-          sortBy={sortBy}
-          onSortChange={setSortBy}
-          activeFilters={activeFilters}
-          onFilterToggle={handleFilterToggle}
-        />
+    fetchQuestions();
+  }, [JSON.stringify(searchParams), session?.accessToken, hasSearched, searchQuery]);
 
-        {/* Questions List */}
-        <div className="flex flex-col gap-3">
-          {mockQuestions.map((question) => (
-            <QuestionCard key={question.id} question={question} />
-          ))}
-        </div>
+  const handleFilterToggle = (filter: string) => {
+    setActiveFilters((prev) => {
+      const newFilters = prev.includes(filter)
+        ? prev.filter((f) => f !== filter)
+        : [...prev, filter];
 
-        {/* Pagination */}
-        <div className="flex justify-center mt-8">
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" disabled>
-              Previous
-            </Button>
-            {[1, 2, 3, 4, 5].map((page) => (
+      // Reset to first page when filters change
+      setPage(1);
+      return newFilters;
+    });
+  };
+
+  const handleSortChange = (newSortBy: string) => {
+    setSortBy(newSortBy);
+    setPage(1);
+
+    // Set appropriate order based on sort type
+    if (newSortBy === "vote_count" || newSortBy === "view_count") {
+      setOrder("desc");
+    } else {
+      setOrder("desc"); // Default to newest first
+    }
+  };
+
+  const handlePageChange = (newPage: number) => {
+    setPage(newPage);
+  };
+
+  if (error) {
+    return (
+      <MainLayout>
+        <div className="container mx-auto px-4 py-6 max-w-7xl">
+          <Alert variant="destructive">
+            <AlertDescription>
+              Failed to load questions. Please try again.
               <Button
-                key={page}
-                variant={page === 1 ? "default" : "outline"}
+                variant="outline"
                 size="sm"
-                className="w-8 h-8"
+                onClick={() => window.location.reload()}
+                className="ml-2"
               >
-                {page}
+                Retry
               </Button>
-            ))}
-            <Button variant="outline" size="sm">
-              Next
-            </Button>
-          </div>
+            </AlertDescription>
+          </Alert>
         </div>
-      </main>
-    </div>
+      </MainLayout>
+    );
+  }
+
+  return (
+    <MainLayout>
+      {!hasSearched || !searchQuery.trim() ? (
+        <div className="container mx-auto px-4 py-6 max-w-7xl">
+          {/* Questions List */}
+          <div className="flex flex-col gap-3">
+            {isLoading ? (
+              // Loading skeletons
+              Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="p-6 border rounded-lg">
+                  <Skeleton className="h-6 w-3/4 mb-3" />
+                  <Skeleton className="h-4 w-full mb-2" />
+                  <Skeleton className="h-4 w-2/3 mb-4" />
+                  <div className="flex gap-2 mb-3">
+                    <Skeleton className="h-6 w-16" />
+                    <Skeleton className="h-6 w-20" />
+                    <Skeleton className="h-6 w-18" />
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-4 w-24" />
+                  </div>
+                </div>
+              ))
+            ) : questionsResponse?.questions.length === 0 ? (
+              <div className="text-center py-12">
+                <h3 className="text-lg font-medium text-foreground mb-2">
+                  No questions found
+                </h3>
+                <p className="text-gray-500 mb-4">
+                  Be the first to ask a question!
+                </p>
+                <Link href="/ask">
+                  <Button>Ask a Question</Button>
+                </Link>
+              </div>
+            ) : (
+              questionsResponse?.questions.map((question, index) => (
+                <QuestionCard question={question} key={index} />
+              ))
+            )}
+          </div>
+
+          {/* Pagination */}
+          {questionsResponse && questionsResponse.questions.length > 0 && (
+            <div className="flex justify-center mt-8">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!questionsResponse.pagination?.has_prev}
+                  onClick={() => handlePageChange(page - 1)}
+                >
+                  Previous
+                </Button>
+
+                {/* Page numbers */}
+                {Array.from(
+                  { length: Math.min(5, questionsResponse.pagination?.pages) },
+                  (_, i) => {
+                    const pageNum = Math.max(1, page - 2) + i;
+                    if (pageNum > questionsResponse.pagination.pages) return null;
+
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={pageNum === page ? "default" : "outline"}
+                        size="sm"
+                        className="w-8 h-8"
+                        onClick={() => handlePageChange(pageNum)}
+                      >
+                        {pageNum}
+                      </Button>
+                    );
+                  }
+                )}
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!questionsResponse.pagination?.has_next}
+                  onClick={() => handlePageChange(page + 1)}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Results summary */}
+          {questionsResponse && (
+            <div className="text-center mt-4 text-sm text-gray-500">
+              Showing {questionsResponse.questions.length} of{" "}
+              {questionsResponse.pagination?.total} questions
+            </div>
+          )}
+        </div>
+      ) : null}
+    </MainLayout>
   );
 }

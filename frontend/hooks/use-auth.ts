@@ -1,104 +1,117 @@
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  apiClient,
-  type LoginRequest,
-  type RegisterRequest,
-  type AuthResponse,
-} from "@/lib/api-client";
+import { useState } from "react";
+import { signIn, signOut, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
-export function useLogin() {
+// Simple hook for login
+export const useLogin = () => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
   const router = useRouter();
-  const queryClient = useQueryClient();
 
-  return useMutation({
-    mutationFn: (credentials: LoginRequest) => apiClient.login(credentials),
-    onSuccess: (data: AuthResponse) => {
-      // Store tokens in localStorage (consider using httpOnly cookies for production)
-      localStorage.setItem("access_token", data.access_token);
-      localStorage.setItem("refresh_token", data.refresh_token);
-      localStorage.setItem("user", JSON.stringify(data.user));
+  const login = async (email: string, password: string) => {
+    try {
+      setIsLoading(true);
+      setError(null);
 
-      // Invalidate and refetch user queries
-      queryClient.invalidateQueries({ queryKey: ["user"] });
+      const result = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+      });
 
-      toast.success("Login successful!");
+      if (result?.error) {
+        throw new Error(result.error);
+      }
+
+      if (result?.ok) {
+        toast.success("Login successful", "Welcome back!");
+        router.push("/");
+      }
+    } catch (err) {
+      setError(err as Error);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return { login, isLoading, error };
+};
+
+// Simple hook for register
+export const useRegister = () => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const router = useRouter();
+
+  const register = async (email: string, password: string, name: string) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      // For now, we'll use signIn after registration
+      // You might want to implement a separate registration endpoint
+      const result = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+      });
+
+      if (result?.error) {
+        throw new Error(result.error);
+      }
+
+      if (result?.ok) {
+        toast.success("Registration successful", "Welcome to StackIt!");
+        router.push("/");
+      }
+    } catch (err) {
+      setError(err as Error);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return { register, isLoading, error };
+};
+
+// Simple hook for logout
+export const useLogout = () => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const router = useRouter();
+
+  const logout = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      await signOut({ redirect: false });
+      toast.success("Logged out successfully", "Come back soon!");
       router.push("/");
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || "Login failed");
-    },
-  });
-}
+    } catch (err) {
+      setError(err as Error);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-export function useRegister() {
-  const router = useRouter();
-  const queryClient = useQueryClient();
+  return { logout, isLoading, error };
+};
 
-  return useMutation({
-    mutationFn: (userData: RegisterRequest) => apiClient.register(userData),
-    onSuccess: (data: AuthResponse) => {
-      // Store tokens in localStorage
-      localStorage.setItem("access_token", data.access_token);
-      localStorage.setItem("refresh_token", data.refresh_token);
-      localStorage.setItem("user", JSON.stringify(data.user));
+// Simple hook for current session
+export const useAuth = () => {
+  const { data: session, status } = useSession();
 
-      // Invalidate and refetch user queries
-      queryClient.invalidateQueries({ queryKey: ["user"] });
-
-      toast.success("Registration successful!");
-      router.push("/");
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || "Registration failed");
-    },
-  });
-}
-
-export function useGoogleAuth() {
-  const router = useRouter();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (token: string) => apiClient.googleAuth(token),
-    onSuccess: (data: AuthResponse) => {
-      // Store tokens in localStorage
-      localStorage.setItem("access_token", data.access_token);
-      localStorage.setItem("refresh_token", data.refresh_token);
-      localStorage.setItem("user", JSON.stringify(data.user));
-
-      // Invalidate and refetch user queries
-      queryClient.invalidateQueries({ queryKey: ["user"] });
-
-      toast.success("Google authentication successful!");
-      router.push("/");
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || "Google authentication failed");
-    },
-  });
-}
-
-export function useLogout() {
-  const router = useRouter();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async () => {
-      // Clear tokens from localStorage
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("refresh_token");
-      localStorage.removeItem("user");
-    },
-    onSuccess: () => {
-      // Clear all queries
-      queryClient.clear();
-
-      toast.success("Logged out successfully!");
-      router.push("/auth/login");
-    },
-  });
-}
+  return {
+    user: session?.user || null,
+    isLoading: status === "loading",
+    isAuthenticated: status === "authenticated",
+    isUnauthenticated: status === "unauthenticated",
+  };
+};

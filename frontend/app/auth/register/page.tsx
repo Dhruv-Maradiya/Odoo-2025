@@ -17,7 +17,6 @@ import { z } from "zod";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { apiClient } from "@/lib/api-client";
 
 const registerSchema = z
   .object({
@@ -59,23 +58,34 @@ export default function RegisterPage() {
     setIsLoading(true);
     try {
       const { confirmPassword, ...submitData } = data;
-
-      // Register with backend
-      const response = await apiClient.register(submitData);
-
-      if (response.access_token) {
-        toast.success("Registration successful!");
-
-        // Sign in with NextAuth using the registered credentials
-        const signInResult = await signIn("credentials", {
-          email: data.email,
-          password: data.password,
-          redirect: false,
-        });
-
-        if (signInResult?.ok) {
-          router.push("/");
+      // Register with FastAPI backend
+      const response = await fetch(
+        `${
+          process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1"
+        }/auth/register`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(submitData),
         }
+      );
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Registration failed");
+      }
+      toast.success("Registration successful!");
+      // Sign in with NextAuth using the registered credentials
+      const signInResult = await signIn("credentials", {
+        email: data.email,
+        password: data.password,
+        redirect: false,
+      });
+      if (signInResult?.error) {
+        toast.error(signInResult.error);
+        return;
+      }
+      if (signInResult?.ok) {
+        router.push("/");
       }
     } catch (error: any) {
       toast.error(error.message || "Registration failed. Please try again.");

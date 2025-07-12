@@ -4,8 +4,8 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { HeroUIProvider } from "@heroui/react";
-import { ReactQueryProvider } from "@/lib/react-query-provider";
 import { AuthProvider } from "@/lib/auth-provider";
+import { SearchProvider } from "@/contexts/search-context";
 import { Toaster } from "sonner";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -26,19 +26,19 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <AuthProvider>
-          <ReactQueryProvider>
-            <ThemeProvider
-              attribute="class"
-              defaultTheme="system"
-              enableSystem
-              disableTransitionOnChange
-            >
-              <HeroUIProvider>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="system"
+            enableSystem
+            disableTransitionOnChange
+          >
+            <HeroUIProvider>
+              <SearchProvider>
                 {children}
                 <Toaster richColors />
-              </HeroUIProvider>
-            </ThemeProvider>
-          </ReactQueryProvider>
+              </SearchProvider>
+            </HeroUIProvider>
+          </ThemeProvider>
         </AuthProvider>
       </body>
     </html>
