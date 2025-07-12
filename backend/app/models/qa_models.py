@@ -141,6 +141,7 @@ class AnswerModel(BaseModel):
     vote_count: int = 0
     upvotes: int = 0
     downvotes: int = 0
+    user_vote: Optional[str] = None
     comments: List[CommentModel] = []
     created_at: datetime
     updated_at: Optional[datetime] = None
@@ -159,6 +160,7 @@ class QuestionModel(BaseModel):
     vote_count: int = 0
     answer_count: int = 0
     has_accepted_answer: bool = False
+    user_vote: Optional[str] = None
     answers: List[AnswerModel] = []
     created_at: datetime
     updated_at: Optional[datetime] = None
@@ -173,7 +175,9 @@ class QuestionListModel(BaseModel):
     tags: List[str]
     view_count: int = 0
     answer_count: int = 0
+    vote_count: int = 0
     has_accepted_answer: bool = False
+    user_vote: Optional[str] = None
     created_at: datetime
 
 

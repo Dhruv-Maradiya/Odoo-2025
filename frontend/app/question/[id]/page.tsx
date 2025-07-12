@@ -9,69 +9,73 @@ import { BreadcrumbItem, Breadcrumbs, Button } from "@heroui/react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
+import { useSession } from "next-auth/react";
+import { getApiClient } from "@/lib/api-client";
+import { toast } from "@/lib/toast";
 
 export default function QuestionDetailPage() {
   const params = useParams();
   const questionId = params.id as string;
   const { data: questionData, isLoading, error } = useQuestion(questionId);
   const { data: similarQuestionsData } = useSimilarQuestions(questionId);
+  const { data: session } = useSession();
 
-  // Voting state
-  const [questionVotes, setQuestionVotes] = useState<number>(
-    questionData?.vote_count || 0
-  );
-  const [questionUserVote, setQuestionUserVote] = useState<
-    "up" | "down" | null
-  >(null);
-  const [answerVotes, setAnswerVotes] = useState<{ [key: string]: number }>(
-    questionData?.answers?.reduce((acc, answer) => {
-      acc[answer.id] = answer.vote_count;
-      return acc;
-    }, {} as { [key: string]: number }) || {}
-  );
-  const [answerUserVotes, setAnswerUserVotes] = useState<{
-    [key: string]: "up" | "down" | null;
-  }>({});
+  const [isVotingQuestion, setIsVotingQuestion] = useState(false);
+  const [isVotingAnswer, setIsVotingAnswer] = useState<string | null>(null);
   const [newAnswer, setNewAnswer] = useState("");
 
-  const handleQuestionVote = (type: "up" | "down") => {
-    if (questionUserVote === type) {
-      setQuestionVotes((prev: number) => prev + (type === "up" ? -1 : 1));
-      setQuestionUserVote(null);
-    } else {
-      const adjustment = questionUserVote
-        ? type === "up"
-          ? 2
-          : -2
-        : type === "up"
-        ? 1
-        : -1;
-      setQuestionVotes((prev: number) => prev + adjustment);
-      setQuestionUserVote(type);
+  const handleQuestionVote = async (type: "upvote" | "downvote") => {
+    if (!questionData || !session?.accessToken) {
+      toast.error("Please log in to vote", "You need to be logged in to vote on questions");
+      return;
+    }
+    
+    if (isVotingQuestion) return;
+    
+    setIsVotingQuestion(true);
+    try {
+      const apiClient = getApiClient(session.accessToken);
+      const result = await apiClient.voteQuestion(questionData.question_id, type);
+      
+      toast.success(
+        `Question ${type === 'upvote' ? 'upvoted' : 'downvoted'} successfully`,
+        `Total votes: ${result.vote_count}`
+      );
+      
+      // Refresh the question data
+      window.location.reload();
+    } catch (error) {
+      console.error("Failed to vote on question:", error);
+      // Error toast is handled by axios interceptor
+    } finally {
+      setIsVotingQuestion(false);
     }
   };
 
-  const handleAnswerVote = (answerId: string, type: "up" | "down") => {
-    const currentVote = answerUserVotes[answerId];
-    if (currentVote === type) {
-      setAnswerVotes((prev) => ({
-        ...prev,
-        [answerId]: (prev[answerId] || 0) + (type === "up" ? -1 : 1),
-      }));
-      setAnswerUserVotes((prev) => ({ ...prev, [answerId]: null }));
-    } else {
-      const adjustment = currentVote
-        ? type === "up"
-          ? 2
-          : -2
-        : type === "up"
-        ? 1
-        : -1;
-      setAnswerVotes((prev) => ({
-        ...prev,
-        [answerId]: (prev[answerId] || 0) + adjustment,
-      }));
-      setAnswerUserVotes((prev) => ({ ...prev, [answerId]: type }));
+  const handleAnswerVote = async (answerId: string, type: "upvote" | "downvote") => {
+    if (!session?.accessToken) {
+      toast.error("Please log in to vote", "You need to be logged in to vote on answers");
+      return;
+    }
+
+    if (isVotingAnswer === answerId) return;
+
+    setIsVotingAnswer(answerId);
+    try {
+      const apiClient = getApiClient(session.accessToken);
+      const result = await apiClient.voteAnswer(answerId, type);
+      
+      toast.success(
+        `Answer ${type === 'upvote' ? 'upvoted' : 'downvoted'} successfully`
+      );
+      
+      // Refresh the question data
+      window.location.reload();
+    } catch (error) {
+      console.error("Failed to vote on answer:", error);
+      // Error toast is handled by axios interceptor
+    } finally {
+      setIsVotingAnswer(null);
     }
   };
 
@@ -109,12 +113,13 @@ export default function QuestionDetailPage() {
             {/* Question */}
             <QACard
               type="question"
+              id={questionData.question_id}
               title={questionData.title}
               content={questionData.description}
               tags={questionData.tags}
               author={questionData.author}
-              votes={questionVotes}
-              userVote={questionUserVote}
+              votes={questionData.vote_count}
+              userVote={questionData.user_vote}
               createdAt={questionData.created_at}
               onVote={handleQuestionVote}
             />
@@ -131,10 +136,11 @@ export default function QuestionDetailPage() {
                   <QACard
                     key={answer.id}
                     type="answer"
+                    id={answer.id}
                     content={answer.content}
                     author={answer.author}
-                    votes={answerVotes[answer.id]}
-                    userVote={answerUserVotes[answer.id]}
+                    votes={answer.vote_count}
+                    userVote={answer.user_vote}
                     createdAt={answer.created_at}
                     isAccepted={answer.is_accepted}
                     onVote={(type) => handleAnswerVote(answer.id, type)}

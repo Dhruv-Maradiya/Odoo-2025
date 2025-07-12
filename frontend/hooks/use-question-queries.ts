@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient, UseQueryOptions, useInfiniteQuery } from '@tanstack/react-query';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, getAuthenticatedClient } from '@/lib/api-client';
+import { toast } from '@/lib/toast';
 import type {
     Question,
     QuestionWithAnswers,
@@ -13,6 +14,7 @@ import type {
     Comment,
     CommentCreateRequest,
 } from '@/types/api';
+import { useSession } from 'next-auth/react';
 
 // Query Keys
 export const questionKeys = {
@@ -203,12 +205,107 @@ export const useDeleteAnswer = () => {
     });
 };
 
-export const useVoteAnswer = () => {
+export const useVoteQuestion = (accessToken?: string) => {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: ({ id, voteType }: { id: string; voteType: 'upvote' | 'downvote' }) =>
-            apiClient.voteAnswer(id, voteType),
+        mutationFn: ({ id, voteType }: { id: string; voteType: 'upvote' | 'downvote' }) => {
+            const client = accessToken ? getAuthenticatedClient(accessToken) : apiClient;
+            return client.voteQuestion(id, voteType);
+        },
+        onSuccess: (data: any, variables) => {
+            const { voteType } = variables;
+            toast.success(
+                `Vote ${voteType === 'upvote' ? 'upvoted' : 'downvoted'} successfully`,
+                `Question ${voteType === 'upvote' ? 'upvoted' : 'downvoted'} with ${data.vote_count} total votes`
+            );
+        },
+        onMutate: async ({ id, voteType }) => {
+            // Optimistically update the UI for question lists
+            queryClient.setQueriesData(
+                { queryKey: questionKeys.lists() },
+                (old: QuestionSearchResponse | undefined) => {
+                    if (!old) return undefined;
+                    return {
+                        ...old,
+                        questions: old.questions.map((question) => {
+                            if (question.question_id === id) {
+                                const currentVote = question.user_vote;
+                                let voteCountChange = 0;
+
+                                if (currentVote === voteType) {
+                                    // Removing vote
+                                    voteCountChange = voteType === 'upvote' ? -1 : 1;
+                                } else if (currentVote === null) {
+                                    // Adding new vote
+                                    voteCountChange = voteType === 'upvote' ? 1 : -1;
+                                } else {
+                                    // Changing vote
+                                    voteCountChange = voteType === 'upvote' ? 2 : -2;
+                                }
+
+                                return {
+                                    ...question,
+                                    vote_count: question.vote_count + voteCountChange,
+                                    user_vote: currentVote === voteType ? null : voteType,
+                                };
+                            }
+                            return question;
+                        }),
+                    };
+                }
+            );
+
+            // Also update question detail cache
+            queryClient.setQueriesData(
+                { queryKey: questionKeys.details() },
+                (old: QuestionWithAnswers | undefined) => {
+                    if (!old || old.question_id !== id) return undefined;
+                    const currentVote = old.user_vote;
+                    let voteCountChange = 0;
+
+                    if (currentVote === voteType) {
+                        // Removing vote
+                        voteCountChange = voteType === 'upvote' ? -1 : 1;
+                    } else if (currentVote === null) {
+                        // Adding new vote
+                        voteCountChange = voteType === 'upvote' ? 1 : -1;
+                    } else {
+                        // Changing vote
+                        voteCountChange = voteType === 'upvote' ? 2 : -2;
+                    }
+
+                    return {
+                        ...old,
+                        vote_count: old.vote_count + voteCountChange,
+                        user_vote: currentVote === voteType ? null : voteType,
+                    };
+                }
+            );
+        },
+        onError: () => {
+            // Revert optimistic update on error
+            queryClient.invalidateQueries({ queryKey: questionKeys.lists() });
+            queryClient.invalidateQueries({ queryKey: questionKeys.details() });
+        },
+    });
+};
+
+export const useVoteAnswer = (accessToken?: string) => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: ({ id, voteType }: { id: string; voteType: 'upvote' | 'downvote' }) => {
+            const client = accessToken ? getAuthenticatedClient(accessToken) : apiClient;
+            return client.voteAnswer(id, voteType);
+        },
+        onSuccess: (data, variables) => {
+            const { voteType } = variables;
+            toast.success(
+                `Answer ${voteType === 'upvote' ? 'upvoted' : 'downvoted'} successfully`,
+                `Answer ${voteType === 'upvote' ? 'upvoted' : 'downvoted'} successfully`
+            );
+        },
         onMutate: async ({ id, voteType }) => {
             // Optimistically update the UI
             queryClient.setQueriesData(
