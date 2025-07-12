@@ -1,38 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
-  Card,
-  CardBody,
-  CardHeader,
-  Button,
-  Input,
-  Select,
-  SelectItem,
-  Chip,
-  Table,
-  TableHeader,
-  TableColumn,
-  TableBody,
-  TableRow,
-  TableCell,
-  Modal,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalFooter,
-  useDisclosure,
-} from "@heroui/react";
-import {
-  Trash2,
-  Flag,
-  Search,
-  BarChart3,
-  Users,
-  AlertTriangle,
-} from "lucide-react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { getAuthenticatedClient } from "@/lib/api-client";
+import { toast } from "@/lib/toast";
+import type { Question, User } from "@/types/api";
 
 interface PlatformStats {
   overview: {
@@ -49,435 +37,447 @@ interface PlatformStats {
     comments_today: number;
     new_users_today: number;
   };
-  top_tags: Array<{ tag: string; count: number }>;
+  top_tags: Array<{
+    tag: string;
+    count: number;
+  }>;
+  generated_at: string;
 }
 
-interface Question {
-  question_id: string;
-  title: string;
-  author: {
-    name: string;
-    email: string;
-  };
-  created_at: string;
-  tags: string[];
-  view_count: number;
-  answer_count: number;
-  is_flagged?: boolean;
-  flag_reason?: string;
-}
-
-export default function AdminDashboard() {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedAction, setSelectedAction] = useState("");
-  const [selectedItems, setSelectedItems] = useState<string[]>([]);
-  const { isOpen, onOpen, onClose } = useDisclosure();
-  const [actionType, setActionType] = useState<"delete" | "flag" | null>(null);
-
-  const queryClient = useQueryClient();
-
-  // Fetch platform statistics
-  const { data: stats, isLoading: statsLoading } = useQuery<PlatformStats>({
-    queryKey: ["admin-stats"],
-    queryFn: async () => {
-      const response = await fetch("/api/admin/stats", {
-        credentials: "include",
-      });
-      if (!response.ok) throw new Error("Failed to fetch stats");
-      return response.json();
-    },
-  });
-
-  // Search questions with admin view
-  const { data: questions, isLoading: questionsLoading } = useQuery<Question[]>(
-    {
-      queryKey: ["admin-questions", searchQuery],
-      queryFn: async () => {
-        const params = new URLSearchParams();
-        if (searchQuery) params.set("query", searchQuery);
-
-        const response = await fetch(`/api/admin/questions?${params}`, {
-          credentials: "include",
-        });
-        if (!response.ok) throw new Error("Failed to fetch questions");
-        const data = await response.json();
-        return data.questions || [];
-      },
-    }
+export function AdminDashboard() {
+  const { data: session } = useSession();
+  const [stats, setStats] = useState<PlatformStats | null>(null);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
+  const [isFlagging, setIsFlagging] = useState<string | null>(null);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [selectedQuestions, setSelectedQuestions] = useState<Set<string>>(
+    new Set()
   );
 
-  // Delete question mutation
-  const deleteQuestionMutation = useMutation({
-    mutationFn: async (questionId: string) => {
-      const response = await fetch(`/api/admin/questions/${questionId}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (!response.ok) throw new Error("Failed to delete question");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-questions"] });
-      queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
-      toast.success("Question deleted successfully");
-    },
-    onError: () => {
-      toast.error("Failed to delete question");
-    },
-  });
+  // Fetch stats, questions, and users
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!session?.accessToken) return;
 
-  // Flag question mutation
-  const flagQuestionMutation = useMutation({
-    mutationFn: async ({
-      questionId,
-      reason,
-    }: {
-      questionId: string;
-      reason: string;
-    }) => {
-      const response = await fetch(
-        `/api/admin/questions/${questionId}/flag?reason=${encodeURIComponent(
-          reason
-        )}`,
-        {
-          method: "POST",
-          credentials: "include",
-        }
-      );
-      if (!response.ok) throw new Error("Failed to flag question");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-questions"] });
-      toast.success("Question flagged successfully");
-    },
-    onError: () => {
-      toast.error("Failed to flag question");
-    },
-  });
+      try {
+        setIsLoading(true);
+        const apiClient = getAuthenticatedClient(session.accessToken);
 
-  // Bulk delete mutation
-  const bulkDeleteMutation = useMutation({
-    mutationFn: async ({
-      itemIds,
-      itemType,
-    }: {
-      itemIds: string[];
-      itemType: string;
-    }) => {
-      const params = new URLSearchParams();
-      itemIds.forEach((id) => params.append("item_ids", id));
-      params.set("item_type", itemType);
+        // Fetch admin stats
+        const statsResponse = await apiClient.getAdminStats();
+        setStats(statsResponse);
 
-      const response = await fetch(`/api/admin/bulk-delete?${params}`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (!response.ok) throw new Error("Failed to bulk delete");
-      return response.json();
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["admin-questions"] });
-      queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
-      toast.success(`Deleted ${data.deleted_count} items successfully`);
-      if (data.failed_count > 0) {
-        toast.warning(`${data.failed_count} items failed to delete`);
+        // Fetch recent questions
+        const questionsResponse = await apiClient.getQuestions({ limit: 10 });
+        setQuestions(questionsResponse.questions);
+
+        // Fetch users
+        const usersResponse = await apiClient.getAdminUsers(1, 5);
+        setUsers(usersResponse.users);
+      } catch (error) {
+        console.error("Failed to fetch admin data:", error);
+        toast.error("Failed to load admin data", "Please try again later");
+      } finally {
+        setIsLoading(false);
       }
-    },
-    onError: () => {
-      toast.error("Failed to perform bulk delete");
-    },
-  });
+    };
 
-  const handleBulkAction = () => {
-    if (selectedItems.length === 0) {
-      toast.error("Please select items first");
-      return;
-    }
+    fetchData();
+  }, [session?.accessToken]);
 
-    if (selectedAction === "delete") {
-      setActionType("delete");
-      onOpen();
-    } else if (selectedAction === "flag") {
-      setActionType("flag");
-      onOpen();
+  const handleDeleteQuestion = async (questionId: string) => {
+    if (!session?.accessToken) return;
+
+    try {
+      setIsDeleting(questionId);
+      const apiClient = getAuthenticatedClient(session.accessToken);
+      await apiClient.adminDeleteQuestion(questionId);
+
+      setQuestions((prev) => prev.filter((q) => q.question_id !== questionId));
+      toast.success(
+        "Question deleted successfully",
+        "The question has been removed"
+      );
+    } catch (error) {
+      console.error("Failed to delete question:", error);
+      // Error toast is handled by axios interceptor
+    } finally {
+      setIsDeleting(null);
     }
   };
 
-  const confirmAction = () => {
-    if (actionType === "delete") {
-      bulkDeleteMutation.mutate({
-        itemIds: selectedItems,
-        itemType: "questions",
-      });
-    } else if (actionType === "flag") {
-      // For demo purposes, flag with a generic reason
-      selectedItems.forEach((id) => {
-        flagQuestionMutation.mutate({
-          questionId: id,
-          reason: "Flagged by admin for review",
-        });
-      });
-    }
+  const handleFlagQuestion = async (questionId: string) => {
+    if (!session?.accessToken) return;
 
-    setSelectedItems([]);
-    onClose();
+    try {
+      setIsFlagging(questionId);
+      const apiClient = getAuthenticatedClient(session.accessToken);
+      await apiClient.flagQuestion(questionId, "Flagged by admin for review");
+
+      // Update the question in local state
+      setQuestions((prev) =>
+        prev.map((q) =>
+          q.question_id === questionId ? { ...q, is_flagged: true } : q
+        )
+      );
+
+      toast.success(
+        "Question flagged for review",
+        "The question has been flagged for moderation"
+      );
+    } catch (error) {
+      console.error("Failed to flag question:", error);
+      toast.error("Failed to flag question", "Please try again");
+    } finally {
+      setIsFlagging(null);
+    }
   };
+
+  const handleBulkDelete = async () => {
+    if (!session?.accessToken || selectedQuestions.size === 0) return;
+
+    try {
+      setIsBulkDeleting(true);
+      const apiClient = getAuthenticatedClient(session.accessToken);
+      await apiClient.bulkDeleteQuestions(Array.from(selectedQuestions));
+
+      setQuestions((prev) =>
+        prev.filter((q) => !selectedQuestions.has(q.question_id))
+      );
+      setSelectedQuestions(new Set());
+      toast.success(
+        "Bulk delete completed",
+        "Selected questions have been deleted"
+      );
+    } catch (error) {
+      console.error("Failed to bulk delete:", error);
+      toast.error("Failed to bulk delete", "Please try again");
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!session?.accessToken) return;
+
+    try {
+      const apiClient = getAuthenticatedClient(session.accessToken);
+      await apiClient.deleteUserAdmin(userId);
+
+      setUsers((prev) => prev.filter((u) => u.id !== userId));
+      toast.success("User deleted successfully", "The user has been removed");
+    } catch (error) {
+      console.error("Failed to delete user:", error);
+      // Error toast is handled by axios interceptor
+    }
+  };
+
+  const toggleQuestionSelection = (questionId: string) => {
+    setSelectedQuestions((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(questionId)) {
+        newSet.delete(questionId);
+      } else {
+        newSet.add(questionId);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllQuestions = () => {
+    if (selectedQuestions.size === questions.length) {
+      setSelectedQuestions(new Set());
+    } else {
+      setSelectedQuestions(new Set(questions.map((q) => q.question_id)));
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="space-y-6">
+          <div className="animate-pulse space-y-4">
+            <div className="h-8 bg-gray-200 rounded w-1/4"></div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="h-32 bg-gray-200 rounded"></div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session?.user) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <Alert>
+          <AlertDescription>
+            You need to be logged in to access the admin dashboard.
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-8">
-      {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <h3 className="text-sm font-medium">Total Questions</h3>
-            <BarChart3 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardBody>
-            <div className="text-2xl font-bold">
-              {statsLoading ? "..." : stats?.overview.total_questions || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              +{stats?.activity.questions_today || 0} today
-            </p>
-          </CardBody>
-        </Card>
+    <div className="container mx-auto px-4 py-8">
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+          <p className="text-gray-600 mt-2">
+            Platform statistics and moderation tools
+          </p>
+        </div>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <h3 className="text-sm font-medium">Total Users</h3>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardBody>
-            <div className="text-2xl font-bold">
-              {statsLoading ? "..." : stats?.overview.total_users || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              +{stats?.activity.new_users_today || 0} today
-            </p>
-          </CardBody>
-        </Card>
+        {/* Stats Cards */}
+        {stats && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Questions</CardTitle>
+                <CardDescription>
+                  Total questions on the platform
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {stats.overview.total_questions}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  +{stats.activity.questions_today} today
+                </p>
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <h3 className="text-sm font-medium">Total Answers</h3>
-            <BarChart3 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardBody>
-            <div className="text-2xl font-bold">
-              {statsLoading ? "..." : stats?.overview.total_answers || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              +{stats?.activity.answers_today || 0} today
-            </p>
-          </CardBody>
-        </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Answers</CardTitle>
+                <CardDescription>Total answers provided</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {stats.overview.total_answers}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  +{stats.activity.answers_today} today
+                </p>
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <h3 className="text-sm font-medium">Flagged Content</h3>
-            <AlertTriangle className="h-4 w-4 text-warning" />
-          </CardHeader>
-          <CardBody>
-            <div className="text-2xl font-bold text-warning">
-              {statsLoading ? "..." : stats?.overview.flagged_questions || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">Questions flagged</p>
-          </CardBody>
-        </Card>
-      </div>
-
-      {/* Content Management */}
-      <Card>
-        <CardHeader>
-          <h3 className="text-lg font-semibold">Content Management</h3>
-        </CardHeader>
-        <CardBody className="space-y-4">
-          {/* Search and Actions */}
-          <div className="flex gap-4">
-            <Input
-              placeholder="Search questions, answers, users..."
-              value={searchQuery}
-              onValueChange={setSearchQuery}
-              startContent={<Search className="h-4 w-4" />}
-              className="flex-1"
-            />
-            <Select
-              placeholder="Bulk Action"
-              value={selectedAction}
-              onSelectionChange={(value) => setSelectedAction(value as string)}
-              className="w-48"
-            >
-              <SelectItem key="delete">Delete Selected</SelectItem>
-              <SelectItem key="flag">Flag Selected</SelectItem>
-            </Select>
-            <Button
-              color="primary"
-              onClick={handleBulkAction}
-              isDisabled={selectedItems.length === 0 || !selectedAction}
-            >
-              Apply Action
-            </Button>
+            <Card>
+              <CardHeader>
+                <CardTitle>Users</CardTitle>
+                <CardDescription>Registered users</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {stats.overview.total_users}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  +{stats.activity.new_users_today} today
+                </p>
+              </CardContent>
+            </Card>
           </div>
+        )}
 
-          {/* Questions Table */}
-          <Table
-            aria-label="Questions table"
-            selectionMode="multiple"
-            selectedKeys={selectedItems}
-            onSelectionChange={(keys) =>
-              setSelectedItems(Array.from(keys as Set<string>))
-            }
-          >
-            <TableHeader>
-              <TableColumn>TITLE</TableColumn>
-              <TableColumn>AUTHOR</TableColumn>
-              <TableColumn>CREATED</TableColumn>
-              <TableColumn>TAGS</TableColumn>
-              <TableColumn>STATS</TableColumn>
-              <TableColumn>STATUS</TableColumn>
-              <TableColumn>ACTIONS</TableColumn>
-            </TableHeader>
-            <TableBody
-              isLoading={questionsLoading}
-              loadingContent="Loading questions..."
-            >
-              {(questions || []).map((question) => (
-                <TableRow key={question.question_id}>
-                  <TableCell>
-                    <div className="max-w-xs truncate font-medium">
-                      {question.title}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div>
-                      <div className="font-medium">{question.author.name}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {question.author.email}
+        {/* Top Tags and Recent Users */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Top Tags */}
+          {stats?.top_tags && stats.top_tags.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Top Tags</CardTitle>
+                <CardDescription>
+                  Most popular tags on the platform
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {stats.top_tags.slice(0, 8).map((tag, index) => (
+                    <div
+                      key={tag.tag}
+                      className="flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">
+                          #{index + 1}
+                        </span>
+                        <Badge variant="outline">{tag.tag}</Badge>
                       </div>
+                      <span className="text-sm text-muted-foreground">
+                        {tag.count} questions
+                      </span>
                     </div>
-                  </TableCell>
-                  <TableCell>
-                    {new Date(question.created_at).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-1 max-w-32">
-                      {question.tags.slice(0, 2).map((tag) => (
-                        <Chip key={tag} size="sm" variant="flat">
-                          {tag}
-                        </Chip>
-                      ))}
-                      {question.tags.length > 2 && (
-                        <Chip size="sm" variant="flat">
-                          +{question.tags.length - 2}
-                        </Chip>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-sm">
-                      <div>{question.view_count} views</div>
-                      <div>{question.answer_count} answers</div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {question.is_flagged ? (
-                      <Chip
-                        color="warning"
-                        size="sm"
-                        startContent={<AlertTriangle className="h-3 w-3" />}
-                      >
-                        Flagged
-                      </Chip>
-                    ) : (
-                      <Chip color="success" size="sm">
-                        Active
-                      </Chip>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="light"
-                        color="warning"
-                        startContent={<Flag className="h-3 w-3" />}
-                        onClick={() => {
-                          flagQuestionMutation.mutate({
-                            questionId: question.question_id,
-                            reason: "Admin review required",
-                          });
-                        }}
-                        isLoading={flagQuestionMutation.isPending}
-                      >
-                        Flag
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="light"
-                        color="danger"
-                        startContent={<Trash2 className="h-3 w-3" />}
-                        onClick={() =>
-                          deleteQuestionMutation.mutate(question.question_id)
-                        }
-                        isLoading={deleteQuestionMutation.isPending}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardBody>
-      </Card>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
 
-      {/* Top Tags */}
-      {stats?.top_tags && stats.top_tags.length > 0 && (
+        {/* Recent Questions */}
         <Card>
           <CardHeader>
-            <h3 className="text-lg font-semibold">Popular Tags</h3>
-          </CardHeader>
-          <CardBody>
-            <div className="flex flex-wrap gap-2">
-              {stats.top_tags.map((tag) => (
-                <Chip key={tag.tag} variant="flat" color="primary">
-                  {tag.tag} ({tag.count})
-                </Chip>
-              ))}
+            <div className="flex justify-between items-center">
+              <div>
+                <CardTitle>Recent Questions</CardTitle>
+                <CardDescription>
+                  Latest questions that may need moderation
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                {questions.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      checked={
+                        selectedQuestions.size === questions.length &&
+                        questions.length > 0
+                      }
+                      onCheckedChange={selectAllQuestions}
+                    />
+                    <span className="text-sm text-muted-foreground">
+                      Select All
+                    </span>
+                  </div>
+                )}
+                {selectedQuestions.size > 0 && (
+                  <span className="text-sm text-muted-foreground">
+                    {selectedQuestions.size} selected
+                  </span>
+                )}
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      disabled={isBulkDeleting || selectedQuestions.size === 0}
+                      variant="destructive"
+                      size="sm"
+                    >
+                      {isBulkDeleting
+                        ? "Deleting..."
+                        : `Bulk Delete (${selectedQuestions.size})`}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Bulk Delete Questions</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Are you sure you want to delete {selectedQuestions.size}{" "}
+                        selected question(s)? This action cannot be undone and
+                        will also delete all related answers and comments.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleBulkDelete}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        Delete All
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
             </div>
-          </CardBody>
-        </Card>
-      )}
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {questions.length === 0 ? (
+                <p className="text-center text-gray-500 py-8">
+                  No questions to moderate
+                </p>
+              ) : (
+                questions.map((question) => (
+                  <div
+                    key={question.question_id}
+                    className="flex items-center justify-between p-4 border rounded-lg"
+                  >
+                    <div className="flex items-center gap-3 flex-1">
+                      <Checkbox
+                        checked={selectedQuestions.has(question.question_id)}
+                        onCheckedChange={() =>
+                          toggleQuestionSelection(question.question_id)
+                        }
+                      />
+                      <div className="flex-1">
+                        <h3 className="font-medium">{question.title}</h3>
+                        <p className="text-sm text-gray-600 mt-1">
+                          by {question.author.name} •{" "}
+                          {new Date(question.created_at).toLocaleDateString()}
+                        </p>
+                        <div className="flex gap-2 mt-2">
+                          <Badge variant="secondary">
+                            {question.vote_count} votes
+                          </Badge>
+                          <Badge variant="outline">
+                            {question.answer_count || 0} answers
+                          </Badge>
+                          {question.is_flagged && (
+                            <Badge variant="destructive">Flagged</Badge>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => handleFlagQuestion(question.question_id)}
+                        disabled={isFlagging === question.question_id}
+                        variant="outline"
+                        size="sm"
+                      >
+                        {isFlagging === question.question_id
+                          ? "Flagging..."
+                          : "Flag"}
+                      </Button>
 
-      {/* Confirmation Modal */}
-      <Modal isOpen={isOpen} onClose={onClose}>
-        <ModalContent>
-          <ModalHeader>
-            Confirm {actionType === "delete" ? "Delete" : "Flag"} Action
-          </ModalHeader>
-          <ModalBody>
-            <p>
-              Are you sure you want to {actionType} {selectedItems.length}{" "}
-              selected item(s)?
-              {actionType === "delete" && " This action cannot be undone."}
-            </p>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="light" onPress={onClose}>
-              Cancel
-            </Button>
-            <Button
-              color={actionType === "delete" ? "danger" : "warning"}
-              onPress={confirmAction}
-              isLoading={
-                bulkDeleteMutation.isPending || flagQuestionMutation.isPending
-              }
-            >
-              {actionType === "delete" ? "Delete" : "Flag"}
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            disabled={isDeleting === question.question_id}
+                            variant="destructive"
+                            size="sm"
+                          >
+                            {isDeleting === question.question_id
+                              ? "Deleting..."
+                              : "Delete"}
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete Question</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Are you sure you want to delete "{question.title}
+                              "? This action cannot be undone and will also
+                              delete all answers and comments.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() =>
+                                handleDeleteQuestion(question.question_id)
+                              }
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

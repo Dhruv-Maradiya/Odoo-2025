@@ -64,7 +64,7 @@ class ChromaDBService:
                 "question_id": question_id,
                 "title": title,
                 "type": "question",
-                "tags": tags,
+                "tags": str(tags),
                 "author_id": author_id,
             }
 
@@ -273,22 +273,40 @@ class ChromaDBService:
     async def get_similar_questions(
         self, question_id: str, limit: int = 5
     ) -> List[Dict]:
-        """Get questions similar to a given question."""
+        """Get questions similar to a given question using semantic search on title and tags."""
         if not self.collection:
             return []
 
         try:
-            # Get the question's content
-            result = self.collection.get(ids=[question_id], include=["documents"])
+            # Get the question's content and metadata
+            result = self.collection.get(
+                ids=[question_id], include=["documents", "metadatas"]
+            )
 
-            if not result or not result["documents"]:
+            if not result or not result["documents"] or not result["metadatas"]:
                 return []
 
             question_content = result["documents"][0]
+            question_metadata = result["metadatas"][0]
+
+            # Create an enhanced query that includes title, description, and tags
+            query_parts = [question_content]
+
+            # Add tags to the query for better semantic matching
+            if question_metadata and "tags" in question_metadata:
+                tags = question_metadata["tags"]
+                if tags:
+                    # Tags can be a string or list - handle both cases
+                    if isinstance(tags, str):
+                        query_parts.append(f"Tags: {tags}")
+                    elif isinstance(tags, list):
+                        query_parts.append(f"Tags: {' '.join(tags)}")
+
+            enhanced_query = " ".join(query_parts)
 
             # Find similar questions
             similar_results = await self.semantic_search(
-                query=question_content,
+                query=enhanced_query,
                 limit=limit + 1,  # +1 because the original question will be included
                 question_only=True,
             )

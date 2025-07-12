@@ -4,11 +4,12 @@ Q&A API endpoints for questions, answers, voting, and notifications.
 
 from typing import List, Optional
 
-from app.api.v1.dependencies import require_role
+from app.api.v1.dependencies import get_optional_user, require_role
 from app.models.qa_models import (
     AnswerCreateRequest,
     AnswerModel,
     AnswerUpdateRequest,
+    BulkDeleteRequest,
     CommentCreateRequest,
     CommentModel,
     NotificationCountModel,
@@ -38,20 +39,25 @@ async def create_question(
     current_user: CurrentUserModel = Depends(require_role(UserRole.USER)),
 ) -> QuestionModel:
     """Create a new question."""
-    question = await qa_service.create_question(
-        question_data=question_data,
-        author_id=current_user.user_id,
-        author_name=current_user.name,
-        author_email=current_user.email,
-    )
 
-    if not question:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create question",
+    try:
+        question = await qa_service.create_question(
+            question_data=question_data,
+            author_id=current_user.user_id,
+            author_name=current_user.name,
+            author_email=current_user.email,
         )
+        if not question:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create question",
+            )
 
-    return question
+        return question
+
+    except Exception as e:
+        print("this is the error man", e)
+        raise
 
 
 @router.get("/questions", response_model=QuestionSearchResponse)
@@ -66,6 +72,7 @@ async def search_questions(
     order: str = Query("desc", description="Sort order"),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
+    current_user: Optional[CurrentUserModel] = Depends(get_optional_user),
 ) -> QuestionSearchResponse:
     """Search and filter questions."""
     search_request = QuestionSearchRequest(
@@ -79,17 +86,21 @@ async def search_questions(
         limit=limit,
     )
 
-    return await qa_service.search_questions(search_request)
+    return await qa_service.search_questions(
+        search_request, user_id=current_user.user_id if current_user else None
+    )
 
 
 @router.get("/questions/{question_id}", response_model=QuestionModel)
 async def get_question(
     question_id: str,
     increment_view: bool = Query(False, description="Increment view count"),
+    current_user: Optional[CurrentUserModel] = Depends(get_optional_user),
 ) -> QuestionModel:
     """Get a question by ID."""
+    user_id = current_user.user_id if current_user else None
     question = await qa_service.get_question_by_id(
-        question_id, increment_view=increment_view
+        question_id, increment_view=increment_view, user_id=user_id
     )
 
     if not question:
@@ -271,6 +282,7 @@ async def create_comment(
         author_id=current_user.user_id,
         author_name=current_user.name,
         author_email=current_user.email,
+        author_picture=current_user.picture,
     )
 
     if not comment:
@@ -401,7 +413,9 @@ async def admin_search_questions(
         limit=limit,
     )
 
-    return await qa_service.search_questions(search_request)
+    return await qa_service.search_questions(
+        search_request, user_id=current_user.user_id if current_user else None
+    )
 
 
 @router.delete("/admin/questions/{question_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -530,98 +544,36 @@ async def admin_get_user_posts(
     }
 
 
-@router.post("/admin/questions/{question_id}/flag")
-async def admin_flag_question(
-    question_id: str,
-    reason: str = Query(..., description="Reason for flagging"),
-    current_user: CurrentUserModel = Depends(require_role(UserRole.ADMIN)),
-):
-    """Admin endpoint to flag a question for review."""
-    success = await qa_service.admin_flag_question(
-        question_id, reason, current_user.user_id
-    )
-
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Question not found",
-        )
-
-    return {
-        "question_id": question_id,
-        "reason": reason,
-        "flagged_by": current_user.email,
-        "message": "Question flagged successfully",
-    }
-
-
-@router.delete("/admin/questions/{question_id}/flag")
-async def admin_unflag_question(
-    question_id: str,
-    current_user: CurrentUserModel = Depends(require_role(UserRole.ADMIN)),
-):
-    """Admin endpoint to remove flag from a question."""
-    success = await qa_service.admin_unflag_question(question_id)
-
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Question not found or not flagged",
-        )
-
-    return {
-        "question_id": question_id,
-        "unflagged_by": current_user.email,
-        "message": "Question flag removed successfully",
-    }
-
-
-@router.post("/admin/answers/{answer_id}/flag")
-async def admin_flag_answer(
-    answer_id: str,
-    reason: str = Query(..., description="Reason for flagging"),
-    current_user: CurrentUserModel = Depends(require_role(UserRole.ADMIN)),
-):
-    """Admin endpoint to flag an answer for review."""
-    # This would need to be implemented in the QA service
-    return {
-        "answer_id": answer_id,
-        "reason": reason,
-        "flagged_by": current_user.email,
-        "message": "Answer flagged successfully",
-    }
-
-
-@router.get("/admin/flagged-content")
-async def admin_get_flagged_content(
-    content_type: Optional[str] = Query(
-        None, description="Filter by content type: questions, answers, comments"
-    ),
-    page: int = Query(1, ge=1, description="Page number"),
-    limit: int = Query(20, ge=1, le=100, description="Items per page"),
-    current_user: CurrentUserModel = Depends(require_role(UserRole.ADMIN)),
-):
-    """Admin endpoint to get all flagged content."""
-    # This would need to be implemented in the QA service
-    return {
-        "content_type": content_type,
-        "page": page,
-        "limit": limit,
-        "message": "Get flagged content endpoint - implement in QA service",
-    }
-
-
 @router.post("/admin/bulk-delete")
 async def admin_bulk_delete(
-    item_ids: List[str] = Query(..., description="List of item IDs to delete"),
-    item_type: str = Query(
-        ..., description="Type of items: questions, answers, comments"
-    ),
+    request: BulkDeleteRequest,
     current_user: CurrentUserModel = Depends(require_role(UserRole.ADMIN)),
 ):
     """Admin endpoint for bulk deletion of content."""
+    item_ids = request.item_ids
+    item_type = request.item_type
+
     if item_type == "questions":
-        result = await qa_service.admin_bulk_delete_questions(item_ids)
+        # For now, handle questions individually since bulk method doesn't exist
+        deleted_count = 0
+        failed_ids = []
+
+        for question_id in item_ids:
+            try:
+                success = await qa_service.admin_delete_question(question_id)
+                if success:
+                    deleted_count += 1
+                else:
+                    failed_ids.append(question_id)
+            except Exception:
+                failed_ids.append(question_id)
+
+        result = {
+            "total_requested": len(item_ids),
+            "deleted_count": deleted_count,
+            "failed_count": len(failed_ids),
+            "failed_ids": failed_ids,
+        }
     else:
         # For now, handle other types individually
         deleted_count = 0
@@ -724,4 +676,31 @@ async def admin_suspend_user(
         "duration_days": duration_days,
         "suspended_by": current_user.email,
         "message": "User suspension endpoint - implement in user service",
+    }
+
+
+@router.post("/questions/{question_id}/vote", status_code=status.HTTP_201_CREATED)
+async def vote_question(
+    question_id: str,
+    vote_data: VoteRequest,
+    current_user: CurrentUserModel = Depends(require_role(UserRole.USER)),
+):
+    """Vote on a question (upvote or downvote)."""
+    question = await qa_service.vote_question(
+        question_id=question_id, vote_data=vote_data, user_id=current_user.user_id
+    )
+
+    print(f"{question=}")
+
+    if not question:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Question not found"
+        )
+
+    return {
+        "message": "Vote recorded successfully",
+        "vote_count": question.vote_count,
+        "upvotes": getattr(question, "upvotes", None),
+        "downvotes": getattr(question, "downvotes", None),
+        "user_vote": vote_data.vote_type,
     }

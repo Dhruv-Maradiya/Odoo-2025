@@ -1,279 +1,212 @@
 "use client";
 
-import React, { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  Card,
-  CardBody,
-  CardHeader,
-  Button,
-  Input,
-  Avatar,
-  Divider,
-  Spinner,
-} from "@heroui/react";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { ProfileAvatar } from "./profile-avatar";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { profileApi, getImageUrl } from "@/lib/backend-api";
+import { toast } from "@/lib/toast";
 
 interface UserProfile {
   user_id: string;
-  name: string;
   email: string;
-  role: string;
+  name: string;
+  bio?: string;
   picture?: string;
-  is_active: boolean;
-}
-
-interface UpdateProfileData {
-  name?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export function ProfilePage() {
-  const { data: session, status } = useSession();
-  const router = useRouter();
-  const queryClient = useQueryClient();
-  const [isEditing, setIsEditing] = useState(false);
-  const [name, setName] = useState("");
-
-  // Fetch current user profile
-  const {
-    data: profile,
-    isLoading,
-    error,
-  } = useQuery<UserProfile>({
-    queryKey: ["profile", session?.user?.id],
-    queryFn: async () => {
-      const response = await fetch("/api/profile", {
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch profile");
-      }
-
-      return response.json();
-    },
-    enabled: !!session?.user,
+  const { data: session } = useSession();
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [formData, setFormData] = useState({
+    name: "",
+    bio: "",
   });
 
-  // Update profile mutation
-  const updateProfileMutation = useMutation({
-    mutationFn: async (data: UpdateProfileData) => {
-      const response = await fetch("/api/profile", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(data),
-      });
+  // Fetch profile data
+  useEffect(() => {
+    const fetchProfile = async () => {
+      if (!session?.accessToken) return;
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to update profile");
+      try {
+        setIsLoading(true);
+        const profileData = await profileApi.getProfile(session.accessToken);
+
+        // Convert picture URL to absolute URL if needed
+        const profileWithImage = {
+          ...profileData,
+          picture: getImageUrl(profileData.picture),
+        };
+        
+        setProfile(profileWithImage);
+        setFormData({
+          name: profileData.name || "",
+          bio: profileData.bio || "",
+        });
+      } catch (error) {
+        console.error("Failed to fetch profile:", error);
+        toast.error("Failed to load profile", "Please try again later");
+      } finally {
+        setIsLoading(false);
       }
+    };
 
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["profile", session?.user?.id],
+    fetchProfile();
+  }, [session?.accessToken]);
+
+  const handleInputChange = (field: string, value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const handleUpdateProfile = async () => {
+    if (!profile || !session?.accessToken) return;
+
+    try {
+      setIsUpdating(true);
+
+      await profileApi.updateProfile(session.accessToken, {
+        name: formData.name,
       });
-      setIsEditing(false);
-      toast.success("Profile updated successfully!");
-    },
-    onError: (error) => {
-      toast.error(error.message || "Failed to update profile");
-    },
-  });
 
-  // Redirect to login if not authenticated
-  if (status === "loading") {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
+      // Update local state
+      setProfile(prev => prev ? {
+        ...prev,
+        name: formData.name,
+        updated_at: new Date().toISOString(),
+      } : null);
 
-  if (status === "unauthenticated") {
-    router.push("/auth/login");
-    return null;
-  }
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
-
-  if (error || !profile) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <Card className="max-w-2xl mx-auto">
-          <CardBody className="text-center">
-            <p className="text-danger">Failed to load profile</p>
-            <Button
-              color="primary"
-              onClick={() => router.push("/")}
-              className="mt-4"
-            >
-              Go Home
-            </Button>
-          </CardBody>
-        </Card>
-      </div>
-    );
-  }
-
-  const handleEdit = () => {
-    setName(profile.name);
-    setIsEditing(true);
-  };
-
-  const handleCancel = () => {
-    setName("");
-    setIsEditing(false);
-  };
-
-  const handleSave = () => {
-    if (name.trim() && name !== profile.name) {
-      updateProfileMutation.mutate({ name: name.trim() });
-    } else {
-      setIsEditing(false);
+      toast.success("Profile updated successfully", "Your changes have been saved");
+    } catch (error) {
+      console.error("Failed to update profile:", error);
+      toast.error("Failed to update profile", "Please try again");
+    } finally {
+      setIsUpdating(false);
     }
   };
 
+  const handleAvatarUpdate = (newAvatarUrl: string) => {
+    if (profile) {
+      setProfile({
+        ...profile,
+        picture: newAvatarUrl,
+      });
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="container mx-auto px-4 py-8 max-w-4xl">
+        <div className="space-y-6">
+          <Card>
+            <CardContent className="p-6">
+              <div className="animate-pulse space-y-4">
+                <div className="h-6 bg-gray-200 rounded w-1/4"></div>
+                <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <div className="container mx-auto px-4 py-8 max-w-4xl">
+        <Card>
+          <CardContent className="p-6">
+            <p className="text-center text-gray-500">Failed to load profile</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="max-w-2xl mx-auto space-y-6">
-        {/* Profile Header */}
-        <Card>
-          <CardHeader>
-            <h1 className="text-2xl font-bold">My Profile</h1>
-          </CardHeader>
-          <CardBody className="space-y-6">
-            {/* Avatar Section */}
-            <div className="flex flex-col items-center space-y-4">
-              <ProfileAvatar
-                currentImageUrl={profile.picture}
-                userName={profile.name}
-                onImageUpdate={(imageUrl: string) => {
-                  queryClient.invalidateQueries({
-                    queryKey: ["profile", session?.user?.id],
-                  });
-                }}
-              />
-            </div>
+    <div className="container mx-auto px-4 py-8 max-w-4xl">
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Profile Settings</h1>
+          <p className="text-gray-600 mt-2">Manage your account settings and preferences</p>
+        </div>
 
-            <Divider />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Avatar Section */}
+          <div className="lg:col-span-1">
+            <ProfileAvatar
+              currentAvatar={profile.picture}
+              userId={profile.user_id}
+              onAvatarUpdate={handleAvatarUpdate}
+            />
+          </div>
 
-            {/* Profile Information */}
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <h2 className="text-lg font-semibold">Profile Information</h2>
-                {!isEditing && (
-                  <Button
-                    color="primary"
-                    variant="light"
-                    size="sm"
-                    onClick={handleEdit}
-                  >
-                    Edit
-                  </Button>
-                )}
-              </div>
-
-              {/* Name Field */}
-              <div>
-                <label className="block text-sm font-medium mb-2">Name</label>
-                {isEditing ? (
+          {/* Profile Form */}
+          <div className="lg:col-span-2">
+            <Card className="shadow-none bg-foreground-50 outline-1 outline-foreground-100 rounded-2xl">
+              <CardHeader>
+                <CardTitle>Profile Information</CardTitle>
+                <CardDescription>
+                  Update your personal information and bio
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
                   <Input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Enter your name"
-                    variant="bordered"
+                    id="email"
+                    type="email"
+                    value={profile.email}
+                    disabled
+                    className="bg-gray-50"
                   />
-                ) : (
-                  <p className="text-foreground-600 bg-default-100 p-3 rounded-lg">
-                    {profile.name}
-                  </p>
-                )}
-              </div>
+                  <p className="text-xs text-gray-500">Email cannot be changed</p>
+                </div>
 
-              {/* Email Field (read-only) */}
-              <div>
-                <label className="block text-sm font-medium mb-2">Email</label>
-                <p className="text-foreground-600 bg-default-100 p-3 rounded-lg">
-                  {profile.email}
-                </p>
-              </div>
+                <div className="space-y-2">
+                  <Label htmlFor="name">Display Name</Label>
+                  <Input
+                    id="name"
+                    value={formData.name}
+                    onChange={(e) => handleInputChange("name", e.target.value)}
+                    placeholder="Enter your display name"
+                  />
+                </div>
 
-              {/* Role Field (read-only) */}
-              <div>
-                <label className="block text-sm font-medium mb-2">Role</label>
-                <p className="text-foreground-600 bg-default-100 p-3 rounded-lg capitalize">
-                  {profile.role}
-                </p>
-              </div>
+                <div className="space-y-2">
+                  <Label htmlFor="bio">Bio</Label>
+                  <Textarea
+                    id="bio"
+                    value={formData.bio}
+                    onChange={(e) => handleInputChange("bio", e.target.value)}
+                    placeholder="Tell us about yourself..."
+                    rows={4}
+                  />
+                </div>
 
-              {/* Action Buttons */}
-              {isEditing && (
-                <div className="flex space-x-3 pt-4">
+                <div className="flex justify-end">
                   <Button
-                    color="primary"
-                    onClick={handleSave}
-                    isLoading={updateProfileMutation.isPending}
-                    disabled={!name.trim() || name === profile.name}
+                    onClick={handleUpdateProfile}
+                    disabled={isUpdating}
                   >
-                    Save Changes
-                  </Button>
-                  <Button
-                    color="default"
-                    variant="light"
-                    onClick={handleCancel}
-                    disabled={updateProfileMutation.isPending}
-                  >
-                    Cancel
+                    {isUpdating ? "Saving..." : "Save Changes"}
                   </Button>
                 </div>
-              )}
-            </div>
-          </CardBody>
-        </Card>
-
-        {/* Account Settings */}
-        <Card>
-          <CardHeader>
-            <h2 className="text-lg font-semibold">Account Settings</h2>
-          </CardHeader>
-          <CardBody>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <div>
-                  <p className="font-medium">Account Status</p>
-                  <p className="text-sm text-foreground-600">
-                    Your account is {profile.is_active ? "active" : "inactive"}
-                  </p>
-                </div>
-                <div
-                  className={`px-3 py-1 rounded-full text-xs font-medium ${
-                    profile.is_active
-                      ? "bg-success-100 text-success-800"
-                      : "bg-danger-100 text-danger-800"
-                  }`}
-                >
-                  {profile.is_active ? "Active" : "Inactive"}
-                </div>
-              </div>
-            </div>
-          </CardBody>
-        </Card>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       </div>
     </div>
   );

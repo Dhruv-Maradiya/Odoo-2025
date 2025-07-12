@@ -54,6 +54,7 @@ async def get_current_user(
             email=user["email"],
             role=UserRole(user["role"]),
             permissions=user.get("permissions", []),
+            picture=user.get("picture"),
             is_active=user.get("is_active", True),
         )
 
