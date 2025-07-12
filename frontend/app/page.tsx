@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { Header } from "@/components/layout/header";
 import { QuestionCard } from "@/components/questions/question-card";
@@ -48,6 +50,15 @@ const mockQuestions = [
 export default function HomePage() {
   const [sortBy, setSortBy] = useState("newest");
   const [activeFilters, setActiveFilters] = useState<string[]>(["hot"]);
+  const router = useRouter();
+  const { data: session, status } = useSession();
+
+  // Redirect admin users to admin dashboard
+  useEffect(() => {
+    if (status === "authenticated" && session?.user?.role === "admin") {
+      router.push("/admin");
+    }
+  }, [session, status, router]);
 
   const handleFilterToggle = (filter: string) => {
     setActiveFilters((prev) =>

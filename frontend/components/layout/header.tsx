@@ -12,7 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useCurrentUser } from "@/hooks/use-current-user";
-import { LogOut, Menu, Moon, Search, Sun, User } from "lucide-react";
+import { LogOut, Menu, Moon, Search, Settings, Sun, User } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { useTheme } from "next-themes";
 import Link from "next/link";
@@ -124,6 +124,14 @@ export function Header({}: HeaderProps) {
                         Profile
                       </Link>
                     </DropdownMenuItem>
+                    {user?.role === "admin" && (
+                      <DropdownMenuItem asChild>
+                        <Link href="/admin" className="flex items-center">
+                          <Settings className="mr-2 h-4 w-4" />
+                          Admin Dashboard
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem onClick={() => signOut()}>
                       <LogOut className="mr-2 h-4 w-4" />
                       Logout

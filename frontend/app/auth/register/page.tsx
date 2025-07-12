@@ -74,7 +74,17 @@ export default function RegisterPage() {
         });
 
         if (signInResult?.ok) {
-          router.push("/");
+          // Get the session to check user role
+          const session = await fetch("/api/auth/session").then((res) =>
+            res.json()
+          );
+
+          // Redirect based on user role
+          if (session?.user?.role === "admin") {
+            router.push("/admin");
+          } else {
+            router.push("/");
+          }
         }
       }
     } catch (error: any) {

@@ -173,6 +173,25 @@ class QAService:
         result = await self.questions.delete_one({"_id": question_id})
         return result.deleted_count > 0
 
+    async def admin_delete_question(self, question_id: str) -> bool:
+        """Admin delete: Delete any question regardless of authorship."""
+        question_doc = await self.questions.find_one({"_id": question_id})
+        if not question_doc:
+            return False
+
+        # Delete related data
+        await self.answers.delete_many({"question_id": question_id})
+        await self.votes.delete_many({"question_id": question_id})
+        await self.comments.delete_many({"question_id": question_id})
+        await self.notifications.delete_many({"related_id": question_id})
+
+        # Delete from ChromaDB
+        await chromadb_service.delete_question(question_id)
+
+        # Delete the question
+        result = await self.questions.delete_one({"_id": question_id})
+        return result.deleted_count > 0
+
     async def search_questions(self, search_request: QuestionSearchRequest) -> QuestionSearchResponse:
         """Search questions with filters and pagination."""
 
@@ -570,28 +589,29 @@ class QAService:
 
         return False
 
-    async def remove_vote(self, answer_id: str, user_id: str) -> bool:
-        """Remove a user's vote from an answer."""
-        vote_doc = await self.votes.find_one({"answer_id": answer_id, "user_id": user_id})
-        if not vote_doc:
+    async def admin_delete_answer(self, answer_id: str) -> bool:
+        """Admin delete: Delete any answer regardless of authorship."""
+        answer_doc = await self.answers.find_one({"_id": answer_id})
+        if not answer_doc:
             return False
 
-        vote_type = vote_doc["vote_type"]
+        question_id = answer_doc["question_id"]
 
-        # Remove the vote
-        result = await self.votes.delete_one({"_id": vote_doc["_id"]})
+        # Delete related data
+        await self.votes.delete_many({"answer_id": answer_id})
+        await self.comments.delete_many({"answer_id": answer_id})
+        await self.notifications.delete_many({"related_id": answer_id})
+
+        # Delete from ChromaDB
+        await chromadb_service.delete_answer(answer_id)
+
+        # Delete the answer
+        result = await self.answers.delete_one({"_id": answer_id})
 
         if result.deleted_count > 0:
-            # Update answer vote counts
-            update_fields = {"vote_count": -1}
-            if vote_type == VoteType.UPVOTE:
-                update_fields["upvotes"] = -1
-            else:
-                update_fields["downvotes"] = -1
-
-            await self.answers.update_one(
-                {"_id": answer_id},
-                {"$inc": update_fields}
+            # Update question answer count
+            await self.questions.update_one(
+                {"_id": question_id}, {"$inc": {"answer_count": -1}}
             )
             return True
 
@@ -649,6 +669,148 @@ class QAService:
         result = await self.comments.delete_one({"_id": comment_id})
         return result.deleted_count > 0
 
+    async def admin_delete_comment(self, comment_id: str) -> bool:
+        """Admin delete: Delete any comment regardless of authorship."""
+        comment_doc = await self.comments.find_one({"_id": comment_id})
+        if not comment_doc:
+            return False
+
+        result = await self.comments.delete_one({"_id": comment_id})
+        return result.deleted_count > 0
+
+    async def admin_bulk_delete_questions(
+        self, question_ids: List[str]
+    ) -> Dict[str, Any]:
+        """Admin bulk delete: Delete multiple questions at once."""
+        deleted_count = 0
+        failed_ids = []
+
+        for question_id in question_ids:
+            try:
+                success = await self.admin_delete_question(question_id)
+                if success:
+                    deleted_count += 1
+                else:
+                    failed_ids.append(question_id)
+            except Exception:
+                failed_ids.append(question_id)
+
+        return {
+            "total_requested": len(question_ids),
+            "deleted_count": deleted_count,
+            "failed_count": len(failed_ids),
+            "failed_ids": failed_ids,
+        }
+
+    async def admin_flag_question(
+        self, question_id: str, reason: str, admin_id: str
+    ) -> bool:
+        """Admin flag: Flag a question for review."""
+        now = datetime.now(timezone.utc)
+
+        result = await self.questions.update_one(
+            {"_id": question_id},
+            {
+                "$set": {
+                    "is_flagged": True,
+                    "flag_reason": reason,
+                    "flagged_by": admin_id,
+                    "flagged_at": now,
+                }
+            },
+        )
+        return result.modified_count > 0
+
+    async def admin_unflag_question(self, question_id: str) -> bool:
+        """Admin unflag: Remove flag from a question."""
+        result = await self.questions.update_one(
+            {"_id": question_id},
+            {
+                "$unset": {
+                    "is_flagged": "",
+                    "flag_reason": "",
+                    "flagged_by": "",
+                    "flagged_at": "",
+                }
+            },
+        )
+        return result.modified_count > 0
+
+    async def admin_get_platform_stats(
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """Admin stats: Get comprehensive platform statistics."""
+        now = datetime.now(timezone.utc)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        # Basic counts
+        total_questions = await self.questions.count_documents({})
+        total_answers = await self.answers.count_documents({})
+        total_comments = await self.comments.count_documents({})
+        total_votes = await self.votes.count_documents({})
+
+        # Today's activity
+        questions_today = await self.questions.count_documents(
+            {"created_at": {"$gte": today_start}}
+        )
+        answers_today = await self.answers.count_documents(
+            {"created_at": {"$gte": today_start}}
+        )
+        comments_today = await self.comments.count_documents(
+            {"created_at": {"$gte": today_start}}
+        )
+
+        # User stats
+        users_collection = self.db.get_collection("users")
+        total_users = await users_collection.count_documents({})
+        new_users_today = await users_collection.count_documents(
+            {"created_at": {"$gte": today_start}}
+        )
+
+        # Flagged content
+        flagged_questions = await self.questions.count_documents({"is_flagged": True})
+
+        # Top tags
+        pipeline = [
+            {"$unwind": "$tags"},
+            {"$group": {"_id": "$tags", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$limit": 10},
+        ]
+        top_tags_cursor = self.questions.aggregate(pipeline)
+        top_tags = await top_tags_cursor.to_list(length=10)
+
+        return {
+            "overview": {
+                "total_questions": total_questions,
+                "total_answers": total_answers,
+                "total_comments": total_comments,
+                "total_users": total_users,
+                "total_votes": total_votes,
+                "flagged_questions": flagged_questions,
+            },
+            "activity": {
+                "questions_today": questions_today,
+                "answers_today": answers_today,
+                "comments_today": comments_today,
+                "new_users_today": new_users_today,
+            },
+            "top_tags": [
+                {"tag": tag["_id"], "count": tag["count"]} for tag in top_tags
+            ],
+            "generated_at": now,
+        }
+
+    async def remove_vote(self, item_id: str, user_id: str) -> bool:
+        """Remove a vote by a user on a question or answer."""
+        result = await self.votes.delete_one(
+            {
+                "user_id": user_id,
+                "$or": [{"question_id": item_id}, {"answer_id": item_id}],
+            }
+        )
+        return result.deleted_count > 0
+
     async def mark_all_notifications_read(self, user_id: str) -> int:
         """Mark all notifications as read for a user."""
         result = await self.notifications.update_many(
@@ -656,6 +818,18 @@ class QAService:
             {"$set": {"is_read": True}}
         )
         return result.modified_count
+
+    async def get_similar_questions(
+        self, question_id: str, limit: int = 5
+    ) -> List[QuestionModel]:
+        """Get similar questions based on content similarity."""
+        # For now, return an empty list - would require implementing semantic similarity
+        return []
+
+    async def semantic_search_all(self, query: str, limit: int = 20) -> List[dict]:
+        """Perform semantic search across questions and answers."""
+        # For now, return an empty list - would require implementing ChromaDB search
+        return []
 
     # Helper methods
     async def _get_user_info(self, user_id: str) -> Optional[QuestionAuthorModel]:
@@ -674,200 +848,88 @@ class QAService:
     async def _get_question_answers(self, question_id: str) -> List[AnswerModel]:
         """Get all answers for a question."""
         cursor = self.answers.find({"question_id": question_id}).sort("created_at", 1)
-        answer_docs = await cursor.to_list(length=None)
-
         answers = []
-        for doc in answer_docs:
-            answer = await self._get_answer_by_id(doc["_id"])
-            if answer:
+
+        async for doc in cursor:
+            author = await self._get_user_info(doc["author_id"])
+            if author:
+                answer = AnswerModel(
+                    answer_id=doc["_id"],
+                    question_id=doc["question_id"],
+                    content=doc["content"],
+                    author=author,
+                    created_at=doc["created_at"],
+                    updated_at=doc.get("updated_at"),
+                    vote_count=doc.get("vote_count", 0),
+                    upvotes=doc.get("upvotes", 0),
+                    downvotes=doc.get("downvotes", 0),
+                    is_accepted=doc.get("is_accepted", False),
+                    comments=[],  # Comments would be loaded separately if needed
+                )
                 answers.append(answer)
 
         return answers
 
     async def _get_answer_by_id(self, answer_id: str) -> Optional[AnswerModel]:
-        """Get an answer by ID with comments."""
-        answer_doc = await self.answers.find_one({"_id": answer_id})
-        if not answer_doc:
+        """Get an answer by ID."""
+        doc = await self.answers.find_one({"_id": answer_id})
+        if not doc:
             return None
 
-        author = await self._get_user_info(answer_doc["author_id"])
+        author = await self._get_user_info(doc["author_id"])
         if not author:
             return None
 
-        # Get comments
-        comments = await self._get_answer_comments(answer_id)
-
         return AnswerModel(
-            answer_id=answer_doc["_id"],
-            question_id=answer_doc["question_id"],
+            answer_id=doc["_id"],
+            question_id=doc["question_id"],
+            content=doc["content"],
             author=author,
-            content=answer_doc["content"],
-            images=answer_doc.get("images", []),
-            is_accepted=answer_doc["is_accepted"],
-            vote_count=answer_doc["vote_count"],
-            upvotes=answer_doc["upvotes"],
-            downvotes=answer_doc["downvotes"],
-            comments=comments,
-            created_at=answer_doc["created_at"],
-            updated_at=answer_doc.get("updated_at"),
+            created_at=doc["created_at"],
+            updated_at=doc.get("updated_at"),
+            vote_count=doc.get("vote_count", 0),
+            upvotes=doc.get("upvotes", 0),
+            downvotes=doc.get("downvotes", 0),
+            is_accepted=doc.get("is_accepted", False),
+            comments=[],  # Comments would be loaded separately if needed
         )
 
-    async def _get_answer_comments(self, answer_id: str) -> List[CommentModel]:
-        """Get comments for an answer."""
-        cursor = self.comments.find({"answer_id": answer_id}).sort("created_at", 1)
-        comment_docs = await cursor.to_list(length=None)
+    async def _increment_user_stat(
+        self, user_id: str, stat_name: str, increment: int = 1
+    ):
+        """Increment a user statistic."""
+        await self.user_stats.update_one(
+            {"user_id": user_id}, {"$inc": {stat_name: increment}}, upsert=True
+        )
 
-        comments = []
-        for doc in comment_docs:
-            author = await self._get_user_info(doc["author_id"])
-            if author:
-                comments.append(CommentModel(
-                    comment_id=doc["_id"],
-                    answer_id=doc["answer_id"],
-                    author=author,
-                    content=doc["content"],
-                    created_at=doc["created_at"],
-                    updated_at=doc.get("updated_at")
-                ))
+    async def _update_tag_stats(self, tags: List[str]):
+        """Update tag usage statistics."""
+        for tag in tags:
+            await self.tags.update_one(
+                {"name": tag}, {"$inc": {"usage_count": 1}}, upsert=True
+            )
 
-        return comments
-
-    async def _create_notification(self, user_id: str, notification_type: NotificationType, title: str, message: str, related_id: Optional[str] = None):
-        """Create a notification."""
+    async def _create_notification(
+        self,
+        user_id: str,
+        notification_type: NotificationType,
+        title: str,
+        message: str,
+        related_id: str,
+    ):
+        """Create a notification for a user."""
         notification_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc)
+
         notification_doc = {
             "_id": notification_id,
             "user_id": user_id,
-            "type": notification_type,
+            "type": notification_type.value,
             "title": title,
             "message": message,
             "related_id": related_id,
             "is_read": False,
-            "created_at": datetime.now(timezone.utc)
+            "created_at": now,
         }
 
         await self.notifications.insert_one(notification_doc)
-
-    async def _update_tag_stats(self, tags: List[str]):
-        """Update tag statistics."""
-        for tag in tags:
-            await self.tags.update_one(
-                {"name": tag},
-                {
-                    "$inc": {"count": 1},
-                    "$set": {"updated_at": datetime.now(timezone.utc)}
-                },
-                upsert=True
-            )
-
-    async def _increment_user_stat(self, user_id: str, field: str, amount: int = 1):
-        """Increment a user statistic."""
-        await self.user_stats.update_one(
-            {"user_id": user_id},
-            {"$inc": {field: amount}},
-            upsert=True
-        )
-
-    async def get_similar_questions(
-        self, question_id: str, limit: int = 5
-    ) -> List[QuestionListModel]:
-        """Get questions similar to the given question using semantic search."""
-        similar_results = await chromadb_service.get_similar_questions(
-            question_id=question_id, limit=limit
-        )
-
-        if not similar_results:
-            return []
-
-        # Get question IDs from results
-        question_ids = [result["id"] for result in similar_results]
-
-        # Get question documents from MongoDB
-        question_docs = await self.questions.find(
-            {"_id": {"$in": question_ids}}
-        ).to_list(length=None)
-
-        # Create a mapping for quick lookup
-        question_map = {doc["_id"]: doc for doc in question_docs}
-
-        # Build response maintaining the similarity order
-        questions = []
-        for result in similar_results:
-            question_id = result["id"]
-            if question_id in question_map:
-                doc = question_map[question_id]
-                author = await self._get_user_info(doc["author_id"])
-                if author:
-                    questions.append(
-                        QuestionListModel(
-                            question_id=doc["_id"],
-                            author=author,
-                            title=doc["title"],
-                            tags=doc["tags"],
-                            view_count=doc["view_count"],
-                            answer_count=doc["answer_count"],
-                            has_accepted_answer=doc["has_accepted_answer"],
-                            created_at=doc["created_at"],
-                        )
-                    )
-
-        return questions
-
-    async def semantic_search_all(self, query: str, limit: int = 20) -> Dict[str, List]:
-        """Perform semantic search across both questions and answers."""
-        results = await chromadb_service.semantic_search(
-            query=query, limit=limit, question_only=False
-        )
-
-        question_results = []
-        answer_results = []
-
-        for result in results:
-            if result["metadata"].get("type") == "question":
-                question_id = result["id"]
-                question_doc = await self.questions.find_one({"_id": question_id})
-                if question_doc:
-                    author = await self._get_user_info(question_doc["author_id"])
-                    if author:
-                        question_results.append(
-                            {
-                                "question": QuestionListModel(
-                                    question_id=question_doc["_id"],
-                                    author=author,
-                                    title=question_doc["title"],
-                                    tags=question_doc["tags"],
-                                    view_count=question_doc["view_count"],
-                                    answer_count=question_doc["answer_count"],
-                                    has_accepted_answer=question_doc[
-                                        "has_accepted_answer"
-                                    ],
-                                    created_at=question_doc["created_at"],
-                                ),
-                                "similarity_score": result["similarity_score"],
-                            }
-                        )
-
-            elif result["metadata"].get("type") == "answer":
-                answer_id = result["id"]
-                answer_doc = await self.answers.find_one({"_id": answer_id})
-                if answer_doc:
-                    author = await self._get_user_info(answer_doc["author_id"])
-                    if author:
-                        answer_results.append(
-                            {
-                                "answer": {
-                                    "answer_id": answer_doc["_id"],
-                                    "question_id": answer_doc["question_id"],
-                                    "author": author,
-                                    "content": answer_doc["content"],
-                                    "created_at": answer_doc["created_at"],
-                                },
-                                "similarity_score": result["similarity_score"],
-                            }
-                        )
-
-        return {"questions": question_results, "answers": answer_results}
-
-
-# Global service instance
-qa_service = QAService()

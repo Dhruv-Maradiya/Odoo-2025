@@ -54,7 +54,18 @@ export default function LoginPage() {
         toast.error("Invalid email or password");
       } else if (result?.ok) {
         toast.success("Login successful!");
-        router.push("/");
+
+        // Get the session to check user role
+        const session = await fetch("/api/auth/session").then((res) =>
+          res.json()
+        );
+
+        // Redirect based on user role
+        if (session?.user?.role === "admin") {
+          router.push("/admin");
+        } else {
+          router.push("/");
+        }
       }
     } catch (error) {
       toast.error("Login failed. Please try again.");
@@ -75,7 +86,18 @@ export default function LoginPage() {
         toast.error("Google login failed");
       } else if (result?.ok) {
         toast.success("Google login successful!");
-        router.push("/");
+
+        // Get the session to check user role
+        const session = await fetch("/api/auth/session").then((res) =>
+          res.json()
+        );
+
+        // Redirect based on user role
+        if (session?.user?.role === "admin") {
+          router.push("/admin");
+        } else {
+          router.push("/");
+        }
       }
     } catch (error) {
       toast.error("Google login failed. Please try again.");
