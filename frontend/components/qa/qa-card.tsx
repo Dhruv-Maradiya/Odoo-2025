@@ -4,7 +4,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@heroui/react";
-import { ArrowDown, ArrowUp, Check } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, CheckCheck } from "lucide-react";
 import Image from "next/image";
 import { ReactNode } from "react";
 
@@ -46,7 +46,7 @@ export function QACard({
     ? "shadow-none bg-foreground-50 outline-1 outline-foreground-100 rounded-2xl p-0"
     : `shadow-none outline-1 rounded-2xl transition-colors ${
         isAccepted
-          ? "bg-green-50 outline-green-200 border-green-200"
+          ? "bg-green-500/30 outline-green-400 border-green-400"
           : "bg-foreground-50 outline-foreground-100"
       }`;
 
@@ -82,6 +82,13 @@ export function QACard({
       )}
 
       <CardContent className={`pt-0 ${contentPadding}`}>
+        {isAccepted && (
+          <div className="text-sm flex gap-2 mb-5 bg-green-500/50 w-fit rounded-full px-3 py-1 text-foreground items-center">
+            <CheckCheck width={19} height={19} />
+            Accepted Answer
+          </div>
+        )}
+
         <div className="flex gap-4">
           {/* Voting Section */}
           <div className="flex flex-col items-center gap-2">
@@ -116,12 +123,6 @@ export function QACard({
                 <ArrowDown className="h-4 w-4" />
               </Button>
             </div>
-            {/* Accepted answer indicator */}
-            {isAccepted && (
-              <div className="bg-green-100 p-2 rounded-full mt-2">
-                <Check className="h-5 w-5 text-green-600" />
-              </div>
-            )}
           </div>
 
           {/* Content Section */}
