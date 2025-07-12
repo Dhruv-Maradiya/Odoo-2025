@@ -1,6 +1,6 @@
 "use client";
 
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@heroui/react";
@@ -14,7 +14,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { formatDistanceToNow } from "date-fns";
 import type { Question } from "@/types/api";
 import { getApiClient } from "@/lib/api-client";
@@ -31,6 +31,12 @@ export function QuestionCard({ question }: QuestionCardProps) {
   const [localVotes, setLocalVotes] = useState(question.vote_count);
   const [localUserVote, setLocalUserVote] = useState(question.user_vote);
 
+  // Sync local state with props when they change
+  useEffect(() => {
+    setLocalVotes(question.vote_count);
+    setLocalUserVote(question.user_vote);
+  }, [question.vote_count, question.user_vote]);
+
   const handleVote = async (type: "upvote" | "downvote") => {
     // Debug: Log session info
     console.log("Session:", session);
@@ -38,7 +44,7 @@ export function QuestionCard({ question }: QuestionCardProps) {
     console.log("Access token:", session?.accessToken);
     console.log("Session keys:", session ? Object.keys(session) : "No session");
     console.log("User:", session?.user);
-    
+
     if (!session?.accessToken) {
       console.log("No access token found in session");
       toast.error("Please log in to vote", "You need to be logged in to vote on questions");
@@ -47,19 +53,27 @@ export function QuestionCard({ question }: QuestionCardProps) {
 
     if (isVoting) return;
 
+    // Determine the vote type to send to API based on current state
+    let voteTypeToSend: "upvote" | "downvote";
+
+    if (localUserVote === type) {
+      // User is clicking the same vote type - remove the vote (send opposite to toggle off)
+      voteTypeToSend = type === "upvote" ? "downvote" : "upvote";
+    } else {
+      // User is clicking a different vote type or no vote exists - set the new vote
+      voteTypeToSend = type;
+    }
+
     setIsVoting(true);
     try {
       console.log("Creating API client with token:", session.accessToken.substring(0, 20) + "...");
       const apiClient = getApiClient(session.accessToken);
-      const result = await apiClient.voteQuestion(question.question_id, type);
-      
+      const result = await apiClient.voteQuestion(question.question_id, voteTypeToSend);
+
+      // Update local state based on the API response
       setLocalVotes(result.vote_count);
       setLocalUserVote(result.user_vote);
-      
-      toast.success(
-        `Question ${type === 'upvote' ? 'upvoted' : 'downvoted'} successfully`,
-        `Total votes: ${result.vote_count}`
-      );
+
     } catch (error) {
       console.error("Failed to vote:", error);
       // Error toast is handled by axios interceptor
@@ -96,14 +110,19 @@ export function QuestionCard({ question }: QuestionCardProps) {
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1">
                 <div className="flex items-center gap-1 mb-1 text-xs text-muted-foreground">
-                  {question.author_name && (
+                  {question.author && (
                     <>
-                      <Avatar className="h-6 w-6">
+                      <Avatar className="h-5 w-5">
+                        <AvatarImage
+                          src={question.author.picture ||
+                            "https://links.aryanranderiya.com/l/default_user"
+                          }
+                        />
                         <AvatarFallback className="text-xs">
-                          {getAuthorInitials(question.author_name)}
+                          {getAuthorInitials(question.author.name)}
                         </AvatarFallback>
                       </Avatar>
-                      <span className="pr-3">u/{question.author_name}</span>
+                      <span className="pr-3">{question.author.name}</span>
                     </>
                   )}
                   <span>{formatTimeAgo(question.created_at)}</span>
@@ -136,31 +155,36 @@ export function QuestionCard({ question }: QuestionCardProps) {
                 {/* Meta Info */}
                 <div className="flex items-center justify-start gap-2 text-muted-foreground">
                   <div
-                    className={`flex flex-row items-center p-1 gap-2 rounded-full text-foreground ${
-                      localUserVote === "upvote"
-                        ? "bg-primary"
-                        : localUserVote === "downvote"
+                    className={`flex flex-row items-center p-1 gap-2 rounded-full text-foreground ${localUserVote === "upvote"
+                      ? "bg-primary"
+                      : localUserVote === "downvote"
                         ? "bg-violet-600"
                         : "bg-foreground-200"
-                    }`}
+                      }`}
                   >
                     <Button
                       variant="light"
                       size="sm"
                       radius="full"
-                      className={`h-8 w-8 p-0 hover:text-primary`}
+                      className={`h-8 w-8 p-0 ${localUserVote === "upvote"
+                          ? "text-white"
+                          : "text-foreground hover:text-primary"
+                        }`}
                       isIconOnly
                       onPress={() => handleVote("upvote")}
                       isDisabled={isVoting}
                     >
                       <ArrowUp className="h-4 w-4" />
                     </Button>
-                    <span className={`font-bold text-base`}>{localVotes || 0}</span>
+                    <span className="font-bold text-base">{localVotes || 0}</span>
                     <Button
                       variant="light"
                       size="sm"
                       radius="full"
-                      className={`h-8 w-8 p-0 hover:text-violet-600`}
+                      className={`h-8 w-8 p-0 ${localUserVote === "downvote"
+                          ? "text-white"
+                          : "text-foreground hover:text-violet-600"
+                        }`}
                       isIconOnly
                       onPress={() => handleVote("downvote")}
                       isDisabled={isVoting}
@@ -169,14 +193,18 @@ export function QuestionCard({ question }: QuestionCardProps) {
                     </Button>
                   </div>
 
-                  <Button
-                    variant="flat"
-                    radius="full"
-                    className="text-base font-bold"
-                  >
-                    <MessageSquare className="h-4 w-4" />
-                    {question.answer_count || 0}
-                  </Button>
+
+                  <Link href={`/question/${question.question_id}#comments`}>
+                    <Button
+                      variant="flat"
+                      radius="full"
+                      className="text-base font-bold"
+                    >
+                      <MessageSquare className="h-4 w-4" />
+                      {question.answer_count || 0}
+                    </Button>
+                  </Link>
+
                 </div>
               </div>
             </div>

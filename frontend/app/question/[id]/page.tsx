@@ -4,46 +4,98 @@ import { RichTextEditor } from "@/components/editor/rich-text-editor";
 import { Header } from "@/components/layout/header";
 import { QACard } from "@/components/qa/qa-card";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { useQuestion, useSimilarQuestions } from "@/hooks/use-questions";
 import { BreadcrumbItem, Breadcrumbs, Button } from "@heroui/react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { getApiClient } from "@/lib/api-client";
 import { toast } from "@/lib/toast";
+import type { QuestionWithAnswers, Question } from "@/types/api";
 
 export default function QuestionDetailPage() {
   const params = useParams();
   const questionId = params.id as string;
-  const { data: questionData, isLoading, error } = useQuestion(questionId, true);
-  const { data: similarQuestionsData } = useSimilarQuestions(questionId);
   const { data: session } = useSession();
+
+  const [questionData, setQuestionData] = useState<QuestionWithAnswers | null>(null);
+  const [similarQuestionsData, setSimilarQuestionsData] = useState<{ similar_questions: Question[] } | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
 
   const [isVotingQuestion, setIsVotingQuestion] = useState(false);
   const [isVotingAnswer, setIsVotingAnswer] = useState<string | null>(null);
   const [newAnswer, setNewAnswer] = useState("");
+
+  // Fetch question data
+  useEffect(() => {
+    const fetchQuestion = async () => {
+      if (!questionId) return;
+
+      try {
+        setIsLoading(true);
+        setError(null);
+        const apiClient = getApiClient(session?.accessToken);
+        const result = await apiClient.getQuestion(questionId, true);
+        setQuestionData(result);
+      } catch (err) {
+        setError(err as Error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchQuestion();
+  }, [questionId, session?.accessToken]);
+
+  // Fetch similar questions
+  useEffect(() => {
+    const fetchSimilarQuestions = async () => {
+      if (!questionId) return;
+
+      try {
+        const apiClient = getApiClient(session?.accessToken);
+        const result = await apiClient.getSimilarQuestions(questionId, 5);
+        setSimilarQuestionsData(result);
+      } catch (err) {
+        console.error("Failed to fetch similar questions:", err);
+      }
+    };
+
+    fetchSimilarQuestions();
+  }, [questionId, session?.accessToken]);
 
   const handleQuestionVote = async (type: "upvote" | "downvote") => {
     if (!questionData || !session?.accessToken) {
       toast.error("Please log in to vote", "You need to be logged in to vote on questions");
       return;
     }
-    
+
     if (isVotingQuestion) return;
-    
+
+    // Determine the vote type to send to API based on current state
+    let voteTypeToSend: "upvote" | "downvote";
+
+    if (questionData.user_vote === type) {
+      // User is clicking the same vote type - remove the vote (send opposite to toggle off)
+      voteTypeToSend = type === "upvote" ? "downvote" : "upvote";
+    } else {
+      // User is clicking a different vote type or no vote exists - set the new vote
+      voteTypeToSend = type;
+    }
+
     setIsVotingQuestion(true);
     try {
       const apiClient = getApiClient(session.accessToken);
-      const result = await apiClient.voteQuestion(questionData.question_id, type);
-      
-      toast.success(
-        `Question ${type === 'upvote' ? 'upvoted' : 'downvoted'} successfully`,
-        `Total votes: ${result.vote_count}`
-      );
-      
-      // Refresh the question data
-      window.location.reload();
+      const result = await apiClient.voteQuestion(questionData.question_id, voteTypeToSend);
+
+      // Update local state with proper vote count calculation
+      setQuestionData(prev => prev ? {
+        ...prev,
+        vote_count: result.vote_count,
+        user_vote: result.user_vote
+      } : null);
+
     } catch (error) {
       console.error("Failed to vote on question:", error);
       // Error toast is handled by axios interceptor
@@ -60,17 +112,74 @@ export default function QuestionDetailPage() {
 
     if (isVotingAnswer === answerId) return;
 
+    // Find the answer to get current vote state
+    const answer = questionData?.answers.find(a => a.id === answerId);
+    if (!answer) return;
+
+    // Determine the vote type to send to API based on current state
+    let voteTypeToSend: "upvote" | "downvote";
+
+    if (answer.user_vote === type) {
+      // User is clicking the same vote type - remove the vote (send opposite to toggle off)
+      voteTypeToSend = type === "upvote" ? "downvote" : "upvote";
+    } else {
+      // User is clicking a different vote type or no vote exists - set the new vote
+      voteTypeToSend = type;
+    }
+
     setIsVotingAnswer(answerId);
     try {
       const apiClient = getApiClient(session.accessToken);
-      const result = await apiClient.voteAnswer(answerId, type);
-      
-      toast.success(
-        `Answer ${type === 'upvote' ? 'upvoted' : 'downvoted'} successfully`
-      );
-      
-      // Refresh the question data
-      window.location.reload();
+      const result = await apiClient.voteAnswer(answerId, voteTypeToSend);
+
+      // Update local state with proper vote count calculation
+      setQuestionData(prev => prev ? {
+        ...prev,
+        answers: prev.answers.map(a => {
+          if (a.id === answerId) {
+            // Calculate new vote count based on the vote change
+            let newVoteCount = a.vote_count;
+            let newUserVote: "upvote" | "downvote" | null = null;
+
+            if (answer.user_vote === type) {
+              // Removing vote
+              newUserVote = null;
+              if (type === "upvote") {
+                newVoteCount -= 1;
+              } else {
+                newVoteCount += 1;
+              }
+            } else {
+              // Adding or changing vote
+              newUserVote = type;
+              if (answer.user_vote === null) {
+                // No previous vote
+                if (type === "upvote") {
+                  newVoteCount += 1;
+                } else {
+                  newVoteCount -= 1;
+                }
+              } else {
+                // Changing from one vote to another
+                if (answer.user_vote === "upvote" && type === "downvote") {
+                  newVoteCount -= 2; // From +1 to -1
+                } else if (answer.user_vote === "downvote" && type === "upvote") {
+                  newVoteCount += 2; // From -1 to +1
+                }
+              }
+            }
+
+            return {
+              ...a,
+              vote_count: newVoteCount,
+              user_vote: newUserVote
+            };
+          }
+          return a;
+        })
+      } : null);
+
+
     } catch (error) {
       console.error("Failed to vote on answer:", error);
       // Error toast is handled by axios interceptor
@@ -150,7 +259,7 @@ export default function QuestionDetailPage() {
             </div>
 
             {/* Submit Answer */}
-            <Card className="shadow-none bg-foreground-50 outline-1 outline-foreground-100 rounded-2xl">
+            <Card className="shadow-none bg-foreground-50 outline-1 outline-foreground-100 rounded-2xl" id="comments">
               <CardHeader className="pb-4">
                 <h3 className="text-lg font-semibold">Your Answer</h3>
               </CardHeader>

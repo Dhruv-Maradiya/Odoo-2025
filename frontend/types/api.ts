@@ -54,9 +54,11 @@ export interface Question {
     title: string;
     description: string;
     tags: string[];
-    author_id: string;
-    author_name: string;
-    author_email: string;
+    author: {
+        name: string;
+        email: string;
+        picture: string;
+    };
     vote_count: number;
     view_count: number;
     answer_count: number;

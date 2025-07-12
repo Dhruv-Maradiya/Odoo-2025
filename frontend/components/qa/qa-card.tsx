@@ -21,6 +21,7 @@ interface QACardProps {
   author: {
     name: string;
     email: string;
+    picture: string
   };
   votes: number;
   userVote?: "upvote" | "downvote" | null;
@@ -44,14 +45,12 @@ export function QACard({
 }: QACardProps) {
   const { data: session } = useSession();
   const [isVoting, setIsVoting] = useState(false);
-  const [localVotes, setLocalVotes] = useState(votes);
-  const [localUserVote, setLocalUserVote] = useState(userVote);
 
   const handleVote = async (voteType: "upvote" | "downvote") => {
     // Debug: Log session info
     console.log("Session:", session);
     console.log("Access token:", session?.accessToken);
-    
+
     if (!session?.accessToken) {
       toast.error("Please log in to vote", "You need to be logged in to vote");
       return;
@@ -59,24 +58,30 @@ export function QACard({
 
     if (isVoting) return;
 
+    // Determine the vote type to send to API based on current state
+    let voteTypeToSend: "upvote" | "downvote";
+
+    if (userVote === voteType) {
+      // User is clicking the same vote type - remove the vote (send opposite to toggle off)
+      voteTypeToSend = voteType === "upvote" ? "downvote" : "upvote";
+    } else {
+      // User is clicking a different vote type or no vote exists - set the new vote
+      voteTypeToSend = voteType;
+    }
+
     setIsVoting(true);
     try {
       const apiClient = getApiClient(session.accessToken);
-      
+
       if (type === "question") {
-        const result = await apiClient.voteQuestion(id, voteType);
-        setLocalVotes(result.vote_count);
-        setLocalUserVote(result.user_vote);
+        const result = await apiClient.voteQuestion(id, voteTypeToSend);
+        // Don't update local state here - let parent handle it
       } else {
-        const result = await apiClient.voteAnswer(id, voteType);
+        const result = await apiClient.voteAnswer(id, voteTypeToSend);
         // For answers, we might need to refresh the data or handle differently
         // For now, we'll just show a success message
       }
-      
-      toast.success(
-        `${type === 'question' ? 'Question' : 'Answer'} ${voteType === 'upvote' ? 'upvoted' : 'downvoted'} successfully`
-      );
-      
+
       if (onVote) {
         onVote(voteType);
       }
@@ -112,31 +117,30 @@ export function QACard({
           {/* Voting Section */}
           <div className="flex flex-col items-center gap-2">
             <div
-              className={`flex flex-col items-center p-2 rounded-lg ${
-                localUserVote === "upvote"
-                  ? "bg-primary text-white"
-                  : localUserVote === "downvote"
-                  ? "bg-violet-600 text-white"
+              className={`flex flex-col items-center p-2 rounded-full ${userVote === "upvote"
+                ? "bg-primary"
+                : userVote === "downvote"
+                  ? "bg-violet-600"
                   : "bg-foreground-200"
-              }`}
+                }`}
             >
               <Button
                 variant="light"
                 size="sm"
                 radius="full"
-                className="h-8 w-8 p-0 hover:text-primary"
+                className={`h-8 w-8 p-0 text-white`}
                 isIconOnly
                 onPress={() => handleVote("upvote")}
                 isDisabled={isVoting}
               >
                 <ArrowUp className="h-4 w-4" />
               </Button>
-              <span className="font-bold text-base">{localVotes || 0}</span>
+              <span className="font-bold text-base">{votes || 0}</span>
               <Button
                 variant="light"
                 size="sm"
                 radius="full"
-                className="h-8 w-8 p-0 hover:text-violet-600"
+                className={`h-8 w-8 p-0 text-white`}
                 isIconOnly
                 onPress={() => handleVote("downvote")}
                 isDisabled={isVoting}
@@ -149,9 +153,13 @@ export function QACard({
           {/* Content Section */}
           <div className="flex-1">
             {/* Header */}
-            <div className="flex items-center gap-2 mb-3">
-              <Avatar className="h-8 w-8">
-                <AvatarImage src={author.email ? `https://api.dicebear.com/7.x/avataaars/svg?seed=${author.email}` : undefined} />
+            <div className="flex items-center gap-1 mb-3">
+              <Avatar className="h-6 w-6">
+                <AvatarImage
+                  src={author.picture
+                    || "https://links.aryanranderiya.com/l/default_user"
+                  }
+                />
                 <AvatarFallback className="text-xs">
                   {getAuthorInitials(author.name)}
                 </AvatarFallback>

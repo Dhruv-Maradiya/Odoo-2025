@@ -8,11 +8,10 @@ import { Header } from "@/components/layout/header";
 import { QuestionCard } from "@/components/questions/question-card";
 import { QuestionFilters } from "@/components/questions/question-filters";
 import { Button } from "@/components/ui/button";
-import { useQuestions } from "@/hooks/use-questions";
-import { useCurrentUser } from "@/hooks/use-auth-queries";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import type { QuestionSearchRequest } from "@/types/api";
+import { getApiClient } from "@/lib/api-client";
+import type { QuestionSearchRequest, QuestionSearchResponse } from "@/types/api";
 
 export default function HomePage() {
   const [sortBy, setSortBy] = useState("created_at");
@@ -20,9 +19,11 @@ export default function HomePage() {
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
+  const { data: session } = useSession();
 
-  // Get current user for authentication state
-  const { data: currentUser } = useCurrentUser();
+  const [questionsResponse, setQuestionsResponse] = useState<QuestionSearchResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
 
   // Build search params
   const searchParams: QuestionSearchRequest = {
@@ -35,16 +36,28 @@ export default function HomePage() {
     has_accepted_answer: activeFilters.includes("answered")
       ? true
       : activeFilters.includes("unanswered")
-      ? false
-      : undefined,
+        ? false
+        : undefined,
   };
 
-  // Fetch questions
-  const {
-    data: questionsResponse,
-    isLoading,
-    error,
-  } = useQuestions(searchParams);
+  // Fetch questions with authentication
+  useEffect(() => {
+    const fetchQuestions = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const apiClient = getApiClient(session?.accessToken);
+        const result = await apiClient.getQuestions(searchParams);
+        setQuestionsResponse(result);
+      } catch (err) {
+        setError(err as Error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchQuestions();
+  }, [JSON.stringify(searchParams), session?.accessToken]);
 
   const handleFilterToggle = (filter: string) => {
     setActiveFilters((prev) => {
@@ -102,12 +115,6 @@ export default function HomePage() {
       <Header />
 
       <main className="container mx-auto px-4 py-6 max-w-7xl">
-        {/* Action Bar */}
-        <div className="flex flex-col sm:flex-row gap-4 mb-6">
-          <Link href="/ask" className="w-full sm:w-auto">
-            <Button className="w-full sm:w-auto">Ask New Question</Button>
-          </Link>
-        </div>
 
         {/* Questions List */}
         <div className="flex flex-col gap-3">

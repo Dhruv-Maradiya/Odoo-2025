@@ -90,7 +90,7 @@ export default function AskQuestionPage() {
 
     try {
       setIsSubmitting(true);
-      
+
       const questionData: QuestionCreateRequest = {
         title: data.title,
         description: data.description,
@@ -100,7 +100,7 @@ export default function AskQuestionPage() {
       const newQuestion = await apiClient.createQuestion(questionData);
 
       toast.success("Question created successfully", "Your question has been posted");
-      
+
       // Reset form and redirect to the new question
       reset();
       router.push(`/question/${newQuestion.question_id}`);
@@ -252,7 +252,7 @@ export default function AskQuestionPage() {
                     <Button
                       type="submit"
                       color="primary"
-                      size="lg"
+                      radius="full"
                       isLoading={isSubmitting}
                       disabled={isSubmitting}
                     >
