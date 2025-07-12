@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     HOST: str = "http://localhost:8000"
     FRONTEND_URL: str = "http://localhost:3000"
 
+    # Email & Notifications
+    RESEND_API_KEY: str = ""
+    FROM_EMAIL: str = "noreply@example.com"
+    EMAIL_NOTIFICATIONS_ENABLED: bool = True
+
     @computed_field
     def GOOGLE_CALLBACK_URL(self) -> str:
         """Google OAuth callback URL."""

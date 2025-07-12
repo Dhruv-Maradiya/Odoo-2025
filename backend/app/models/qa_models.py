@@ -36,6 +36,7 @@ class QuestionCreateRequest(BaseModel):
     title: str = Field(min_length=5, max_length=200, description="Question title")
     description: str = Field(min_length=10, description="Rich text description")
     tags: List[str] = Field(description="Question tags")
+    images: Optional[List[str]] = Field(None, description="List of image URLs")
 
     @validator('tags')
     def validate_tags(cls, v):
@@ -49,6 +50,7 @@ class QuestionUpdateRequest(BaseModel):
     title: Optional[str] = Field(None, min_length=5, max_length=200)
     description: Optional[str] = Field(None, min_length=10)
     tags: Optional[List[str]] = None
+    images: Optional[List[str]] = Field(None, description="List of image URLs")
 
     @validator('tags')
     def validate_tags(cls, v):
@@ -60,11 +62,13 @@ class QuestionUpdateRequest(BaseModel):
 class AnswerCreateRequest(BaseModel):
     """Request model for creating an answer."""
     content: str = Field(..., min_length=10, description="Rich text answer content")
+    images: Optional[List[str]] = Field(None, description="List of image URLs")
 
 
 class AnswerUpdateRequest(BaseModel):
     """Request model for updating an answer."""
     content: str = Field(..., min_length=10, description="Rich text answer content")
+    images: Optional[List[str]] = Field(None, description="List of image URLs")
 
 
 class VoteRequest(BaseModel):
@@ -117,6 +121,7 @@ class AnswerModel(BaseModel):
     question_id: str
     author: QuestionAuthorModel
     content: str
+    images: Optional[List[str]] = None
     is_accepted: bool = False
     vote_count: int = 0
     upvotes: int = 0
@@ -133,6 +138,7 @@ class QuestionModel(BaseModel):
     title: str
     description: str
     tags: List[str]
+    images: Optional[List[str]] = None
     view_count: int = 0
     answer_count: int = 0
     has_accepted_answer: bool = False

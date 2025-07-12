@@ -8,6 +8,7 @@ from app.api.v1.dependencies import get_current_user
 from app.models.qa_models import (
     AnswerCreateRequest,
     AnswerModel,
+    AnswerUpdateRequest,
     CommentCreateRequest,
     CommentModel,
     NotificationCountModel,
@@ -165,7 +166,7 @@ async def create_answer(
 @router.put("/answers/{answer_id}", response_model=AnswerModel)
 async def update_answer(
     answer_id: str,
-    answer_data: AnswerCreateRequest,
+    answer_data: AnswerUpdateRequest,
     current_user: CurrentUserModel = Depends(get_current_user),
 ) -> AnswerModel:
     """Update an answer (only by the author)."""
