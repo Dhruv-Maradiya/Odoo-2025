@@ -18,6 +18,7 @@ import { useState, useEffect } from "react";
 import { formatDistanceToNow } from "date-fns";
 import type { Question } from "@/types/api";
 import { getApiClient } from "@/lib/api-client";
+import { getImageUrl } from "@/lib/backend-api";
 import { useSession } from "next-auth/react";
 import { toast } from "@/lib/toast";
 
@@ -114,7 +115,7 @@ export function QuestionCard({ question }: QuestionCardProps) {
                     <>
                       <Avatar className="h-5 w-5">
                         <AvatarImage
-                          src={question.author.picture ||
+                          src={getImageUrl(question.author.picture) ||
                             "https://links.aryanranderiya.com/l/default_user"
                           }
                         />

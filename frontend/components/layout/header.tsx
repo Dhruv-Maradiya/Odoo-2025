@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { getImageUrl } from "@/lib/backend-api";
 import { Button, Input } from "@heroui/react";
 import { LogOut, Menu, Moon, Plus, Search, Settings, Sun, User } from "lucide-react";
 import { signOut } from "next-auth/react";
@@ -117,7 +118,7 @@ export function Header({ }: HeaderProps) {
                   <DropdownMenuTrigger asChild>
                     <Avatar className="h-8 w-8 cursor-pointer">
                       <AvatarImage
-                        src={user?.image || "https://links.aryanranderiya.com/l/default_user"}
+                        src={getImageUrl(user?.image) || "https://links.aryanranderiya.com/l/default_user"}
                       />
                       <AvatarFallback>
                         {user?.name?.charAt(0) || <User className="h-4 w-4" />}

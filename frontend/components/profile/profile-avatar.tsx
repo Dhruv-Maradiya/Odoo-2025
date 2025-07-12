@@ -1,14 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { useSession } from "next-auth/react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { apiClient } from "@/lib/api-client";
+import { profileApi, getImageUrl } from "@/lib/backend-api";
 import { toast } from "@/lib/toast";
-import type { ImageUploadRequest } from "@/types/api";
 
 interface ProfileAvatarProps {
   currentAvatar?: string;
@@ -17,6 +17,7 @@ interface ProfileAvatarProps {
 }
 
 export function ProfileAvatar({ currentAvatar, userId, onAvatarUpdate }: ProfileAvatarProps) {
+  const { data: session } = useSession();
   const [isUploading, setIsUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
@@ -28,70 +29,79 @@ export function ProfileAvatar({ currentAvatar, userId, onAvatarUpdate }: Profile
   };
 
   const handleUpload = async () => {
-    if (!selectedFile) {
+    if (!selectedFile || !session?.accessToken) {
       toast.error("No file selected", "Please select an image file to upload");
       return;
     }
 
     try {
       setIsUploading(true);
-      
-      const uploadRequest: ImageUploadRequest = {
-        upload_type: "profile_avatar",
-        related_id: userId,
-      };
 
-      const result = await apiClient.uploadImage(selectedFile, uploadRequest);
-      
+      const result = await profileApi.uploadAvatar(session.accessToken, selectedFile);
+
       toast.success("Avatar updated successfully", "Your profile picture has been updated");
-      
+
       if (onAvatarUpdate) {
-        onAvatarUpdate(result.image_url);
+        // Convert the returned image URL to absolute URL
+        const absoluteImageUrl = getImageUrl(result.image_url);
+        onAvatarUpdate(absoluteImageUrl || result.image_url);
       }
-      
+
       setSelectedFile(null);
     } catch (error) {
       console.error("Failed to upload avatar:", error);
-      // Error toast is handled by axios interceptor
+      toast.error("Failed to upload avatar", "Please try again");
     } finally {
       setIsUploading(false);
     }
+  };
+
+  const getInitials = (name: string) => {
+    return name
+      ?.split(" ")
+      .map((word) => word[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
   };
 
   return (
     <Card className="shadow-none bg-foreground-50 outline-1 outline-foreground-100 rounded-2xl">
       <CardHeader>
         <CardTitle>Profile Picture</CardTitle>
-        <CardDescription>
-          Upload a new profile picture. Supported formats: JPG, PNG, GIF (max 5MB)
-        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center gap-4">
-          <Avatar className="h-20 w-20">
-            <AvatarImage src={currentAvatar} alt="Profile" />
-            <AvatarFallback>U</AvatarFallback>
+        <div className="flex flex-col items-center space-y-4">
+          <Avatar className="h-24 w-24">
+            <AvatarImage
+              src={getImageUrl(currentAvatar) || "https://links.aryanranderiya.com/l/default_user"}
+            />
+            <AvatarFallback className="text-lg">
+              {getInitials("User")}
+            </AvatarFallback>
           </Avatar>
-          <div className="space-y-2">
-            <Label htmlFor="avatar-upload">Upload new image</Label>
+
+          <div className="space-y-2 w-full">
+            <Label htmlFor="avatar-upload">Upload new picture</Label>
             <Input
               id="avatar-upload"
               type="file"
               accept="image/*"
               onChange={handleFileSelect}
-              disabled={isUploading}
+              className="w-full"
             />
           </div>
+
+          {selectedFile && (
+            <Button
+              onClick={handleUpload}
+              disabled={isUploading}
+              className="w-full"
+            >
+              {isUploading ? "Uploading..." : "Upload Picture"}
+            </Button>
+          )}
         </div>
-        {selectedFile && (
-          <Button
-            onClick={handleUpload}
-            disabled={isUploading}
-            className="w-full"
-          >
-            {isUploading ? "Uploading..." : "Upload Avatar"}
-          </Button>
-        )}
       </CardContent>
     </Card>
   );

@@ -9,6 +9,7 @@ import { ArrowDown, ArrowUp, CheckCircle, MessageSquare } from "lucide-react";
 import { useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { getApiClient } from "@/lib/api-client";
+import { getImageUrl } from "@/lib/backend-api";
 import { useSession } from "next-auth/react";
 import { toast } from "@/lib/toast";
 
@@ -156,7 +157,7 @@ export function QACard({
             <div className="flex items-center gap-1 mb-3">
               <Avatar className="h-6 w-6">
                 <AvatarImage
-                  src={author.picture
+                  src={getImageUrl(author.picture)
                     || "https://links.aryanranderiya.com/l/default_user"
                   }
                 />

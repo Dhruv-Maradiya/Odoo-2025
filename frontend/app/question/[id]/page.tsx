@@ -4,7 +4,7 @@ import { RichTextEditor } from "@/components/editor/rich-text-editor";
 import { Header } from "@/components/layout/header";
 import { QACard } from "@/components/qa/qa-card";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { BreadcrumbItem, Breadcrumbs, Button } from "@heroui/react";
+import { BreadcrumbItem, Breadcrumbs, Button, Spinner } from "@heroui/react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState, useEffect } from "react";
@@ -191,7 +191,7 @@ export default function QuestionDetailPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        Loading...
+        <Spinner color="primary" />
       </div>
     );
   }

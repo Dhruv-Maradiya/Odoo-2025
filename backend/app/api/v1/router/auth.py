@@ -65,6 +65,7 @@ async def register_user(user_data: UserRegistrationRequest):
                 "email": user["email"],
                 "role": user["role"],
                 "permissions": user.get("permissions", []),
+                "picture": user.get("picture"),
             },
         )
 
@@ -112,6 +113,7 @@ async def login_user(login_data: UserLoginRequest):
                 "email": user["email"],
                 "role": user["role"],
                 "permissions": user.get("permissions", []),
+                "picture": user.get("picture"),
             },
         )
 

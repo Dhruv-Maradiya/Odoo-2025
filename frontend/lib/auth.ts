@@ -42,6 +42,7 @@ export const authOptions: NextAuthOptions = {
               accessToken: data.access_token,
               refreshToken: data.refresh_token,
               role: data.user.role,
+              picture: data.user.picture,
             };
           }
           return null;
@@ -62,6 +63,7 @@ export const authOptions: NextAuthOptions = {
         token.accessToken = user.accessToken;
         token.refreshToken = user.refreshToken;
         token.role = user.role;
+        token.picture = user.picture;
       }
       return token;
     },
@@ -71,6 +73,7 @@ export const authOptions: NextAuthOptions = {
         session.accessToken = token.accessToken ?? "";
         session.refreshToken = token.refreshToken ?? "";
         session.user.role = token.role ?? "user";
+        session.user.picture = token.picture ?? null;
       }
       return session;
     },

@@ -8,17 +8,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { apiClient } from "@/lib/api-client";
+import { profileApi, getImageUrl } from "@/lib/backend-api";
 import { toast } from "@/lib/toast";
 
 interface UserProfile {
-  id: string;
+  user_id: string;
   email: string;
   name: string;
   bio?: string;
-  avatar_url?: string;
-  created_at: string;
-  updated_at: string;
+  picture?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export function ProfilePage() {
@@ -34,26 +34,22 @@ export function ProfilePage() {
   // Fetch profile data
   useEffect(() => {
     const fetchProfile = async () => {
-      if (!session?.user?.id) return;
+      if (!session?.accessToken) return;
 
       try {
         setIsLoading(true);
-        // For now, we'll create a mock profile from session data
-        // You would typically fetch this from your API
-        const mockProfile: UserProfile = {
-          id: session.user.id,
-          email: session.user.email || "",
-          name: session.user.name || "",
-          bio: "",
-          avatar_url: session.user.image,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+        const profileData = await profileApi.getProfile(session.accessToken);
+
+        // Convert picture URL to absolute URL if needed
+        const profileWithImage = {
+          ...profileData,
+          picture: getImageUrl(profileData.picture),
         };
         
-        setProfile(mockProfile);
+        setProfile(profileWithImage);
         setFormData({
-          name: mockProfile.name,
-          bio: mockProfile.bio || "",
+          name: profileData.name || "",
+          bio: profileData.bio || "",
         });
       } catch (error) {
         console.error("Failed to fetch profile:", error);
@@ -64,7 +60,7 @@ export function ProfilePage() {
     };
 
     fetchProfile();
-  }, [session]);
+  }, [session?.accessToken]);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({
@@ -74,21 +70,22 @@ export function ProfilePage() {
   };
 
   const handleUpdateProfile = async () => {
-    if (!profile) return;
+    if (!profile || !session?.accessToken) return;
 
     try {
       setIsUpdating(true);
-      
-      // For now, we'll just update local state
-      // You would typically call your API here
-      const updatedProfile = {
-        ...profile,
+
+      await profileApi.updateProfile(session.accessToken, {
         name: formData.name,
-        bio: formData.bio,
+      });
+
+      // Update local state
+      setProfile(prev => prev ? {
+        ...prev,
+        name: formData.name,
         updated_at: new Date().toISOString(),
-      };
-      
-      setProfile(updatedProfile);
+      } : null);
+
       toast.success("Profile updated successfully", "Your changes have been saved");
     } catch (error) {
       console.error("Failed to update profile:", error);
@@ -102,7 +99,7 @@ export function ProfilePage() {
     if (profile) {
       setProfile({
         ...profile,
-        avatar_url: newAvatarUrl,
+        picture: newAvatarUrl,
       });
     }
   };
@@ -149,8 +146,8 @@ export function ProfilePage() {
           {/* Avatar Section */}
           <div className="lg:col-span-1">
             <ProfileAvatar
-              currentAvatar={profile.avatar_url}
-              userId={profile.id}
+              currentAvatar={profile.picture}
+              userId={profile.user_id}
               onAvatarUpdate={handleAvatarUpdate}
             />
           </div>
