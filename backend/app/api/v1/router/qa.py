@@ -23,10 +23,8 @@ from app.models.qa_models import (
 from app.models.user_models import CurrentUserModel
 from app.services.qa_service import QAService
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.security import HTTPBearer
 
 router = APIRouter()
-security = HTTPBearer()
 
 # Initialize service
 qa_service = QAService()
