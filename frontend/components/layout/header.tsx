@@ -1,28 +1,27 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Search, User, Sun, Moon, Menu } from "lucide-react"
-import { useTheme } from "next-themes"
-import Link from "next/link"
-import { NotificationDropdown } from "@/components/notifications/notification-dropdown"
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import { useState, useEffect } from "react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Search, User, Sun, Moon, Menu } from "lucide-react";
+import { useTheme } from "next-themes";
+import Link from "next/link";
+import { NotificationDropdown } from "@/components/notifications/notification-dropdown";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Button, Input } from "@heroui/react";
 
 interface HeaderProps {
-  isLoggedIn?: boolean
-  onLoginToggle?: () => void
+  isLoggedIn?: boolean;
+  onLoginToggle?: () => void;
 }
 
 export function Header({ isLoggedIn = false, onLoginToggle }: HeaderProps) {
-  const { theme, setTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
-  const [searchQuery, setSearchQuery] = useState("")
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
-    setMounted(true)
-  }, [])
+    setMounted(true);
+  }, []);
 
   return (
     <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
@@ -32,7 +31,7 @@ export function Header({ isLoggedIn = false, onLoginToggle }: HeaderProps) {
           <div className="flex items-center gap-3">
             <Sheet>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="md:hidden">
+                <Button variant="ghost" isIconOnly className="md:hidden">
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
@@ -54,16 +53,19 @@ export function Header({ isLoggedIn = false, onLoginToggle }: HeaderProps) {
               </SheetContent>
             </Sheet>
 
-            <Link href="/" className="text-2xl font-bold text-primary">
+            <Link href="/" className="text-2xl font-medium text-primary">
               StackIt
             </Link>
           </div>
 
           {/* Desktop Search */}
-          <div className="hidden md:flex flex-1 max-w-md mx-8">
+          <div className="hidden md:flex flex-1 max-w-2xl mx-8">
             <div className="relative w-full">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
+                radius="full"
+                startContent={
+                  <Search className="h-4 w-4 text-muted-foreground" />
+                }
                 placeholder="Search questions..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -75,31 +77,41 @@ export function Header({ isLoggedIn = false, onLoginToggle }: HeaderProps) {
           {/* Actions */}
           <div className="flex items-center gap-2 md:gap-4">
             {/* Mobile Search */}
-            <Button variant="ghost" size="icon" className="md:hidden">
+            <Button variant="flat" isIconOnly className="md:hidden">
               <Search className="h-5 w-5" />
             </Button>
 
             <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              variant="flat"
+              isIconOnly
+              onPress={() => setTheme(theme === "dark" ? "light" : "dark")}
               disabled={!mounted}
+              size="sm"
             >
-              {mounted && theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              {mounted && theme === "dark" ? (
+                <Sun className="h-5 w-5" />
+              ) : (
+                <Moon className="h-5 w-5" />
+              )}
             </Button>
 
             {isLoggedIn ? (
               <>
                 <NotificationDropdown />
                 <Avatar className="h-8 w-8">
-                  <AvatarImage src="/placeholder-user.jpg" />
+                  <AvatarImage src="/profile_photo.webp" />
                   <AvatarFallback>
                     <User className="h-4 w-4" />
                   </AvatarFallback>
                 </Avatar>
               </>
             ) : (
-              <Button onClick={onLoginToggle} size="sm">
+              <Button
+                onPress={onLoginToggle}
+                color="primary"
+                size="sm"
+                className="font-bold "
+              >
                 Login
               </Button>
             )}
@@ -120,5 +132,5 @@ export function Header({ isLoggedIn = false, onLoginToggle }: HeaderProps) {
         </div>
       </div>
     </header>
-  )
+  );
 }
