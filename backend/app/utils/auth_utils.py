@@ -24,7 +24,7 @@ class AuthUtils:
     def get_secret_key(cls) -> str:
         """Get or generate a secret key for JWT operations."""
         if cls._secret_key is None:
-            cls._secret_key = getattr(settings, "JWT_SECRET_KEY", None)
+            cls._secret_key = settings.JWT_SECRET_KEY
             if cls._secret_key is None:
                 # Generate a consistent secret key for the session
                 cls._secret_key = secrets.token_urlsafe(32)
