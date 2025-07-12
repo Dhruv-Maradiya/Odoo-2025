@@ -4,7 +4,7 @@ Q&A API endpoints for questions, answers, voting, and notifications.
 
 from typing import List, Optional
 
-from app.api.v1.dependencies import require_role
+from app.api.v1.dependencies import require_role, get_optional_user
 from app.models.qa_models import (
     AnswerCreateRequest,
     AnswerModel,
@@ -72,6 +72,7 @@ async def search_questions(
     order: str = Query("desc", description="Sort order"),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
+    current_user: Optional[CurrentUserModel] = Depends(get_optional_user),
 ) -> QuestionSearchResponse:
     """Search and filter questions."""
     search_request = QuestionSearchRequest(
@@ -85,17 +86,20 @@ async def search_questions(
         limit=limit,
     )
 
-    return await qa_service.search_questions(search_request)
+    user_id = current_user.user_id if current_user else None
+    return await qa_service.search_questions(search_request, user_id=user_id)
 
 
 @router.get("/questions/{question_id}", response_model=QuestionModel)
 async def get_question(
     question_id: str,
     increment_view: bool = Query(False, description="Increment view count"),
+    current_user: Optional[CurrentUserModel] = Depends(get_optional_user),
 ) -> QuestionModel:
     """Get a question by ID."""
+    user_id = current_user.user_id if current_user else None
     question = await qa_service.get_question_by_id(
-        question_id, increment_view=increment_view
+        question_id, increment_view=increment_view, user_id=user_id
     )
 
     if not question:

@@ -6,20 +6,23 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@heroui/react";
 import { ArrowDown, ArrowUp, Check, CheckCheck } from "lucide-react";
 import Image from "next/image";
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
+import { getApiClient } from "@/lib/api-client";
+import { useSession } from "next-auth/react";
+import { toast } from "@/lib/toast";
 
 export interface QACardProps {
   type: "question" | "answer";
-  id?: number;
+  id?: string;
   title?: string;
   content: string | ReactNode;
   tags?: string[];
   author: { name: string; email: string; picture: string };
   votes: number;
-  userVote?: "up" | "down" | null;
+  userVote?: "upvote" | "downvote" | null;
   createdAt: string;
   isAccepted?: boolean;
-  onVote?: (type: "up" | "down") => void;
+  onVote?: (type: "upvote" | "downvote") => void;
   className?: string;
   children?: ReactNode;
 }
@@ -39,6 +42,11 @@ export function QACard({
   className = "",
   children,
 }: QACardProps) {
+  const { data: session } = useSession();
+  const [isVoting, setIsVoting] = useState(false);
+  const [localVotes, setLocalVotes] = useState(votes);
+  const [localUserVote, setLocalUserVote] = useState(userVote);
+
   const isQuestion = type === "question";
 
   // Different sizes based on type
@@ -54,9 +62,45 @@ export function QACard({
   const contentPadding = isQuestion ? "p-4" : "pt-6";
   const headerPadding = isQuestion ? "pb-4 p-4" : "pb-4";
 
-  const handleVote = (voteType: "up" | "down") => {
+  const handleVote = async (voteType: "upvote" | "downvote") => {
+    if (!session?.accessToken) {
+      toast.error("Please log in to vote", "You need to be logged in to vote");
+      return;
+    }
+
+    if (isVoting) return;
+
     if (onVote) {
       onVote(voteType);
+      return;
+    }
+
+    // Direct API call if no onVote handler provided
+    setIsVoting(true);
+    try {
+      const apiClient = getApiClient(session.accessToken);
+      
+      if (isQuestion && id) {
+        const result = await apiClient.voteQuestion(id, voteType);
+        setLocalVotes(result.vote_count);
+        setLocalUserVote(result.user_vote);
+        toast.success(
+          `Question ${voteType === 'upvote' ? 'upvoted' : 'downvoted'} successfully`,
+          `Total votes: ${result.vote_count}`
+        );
+      } else if (!isQuestion && id) {
+        const result = await apiClient.voteAnswer(id, voteType);
+        setLocalVotes(localVotes + (voteType === 'upvote' ? 1 : -1));
+        setLocalUserVote(localUserVote === voteType ? null : voteType);
+        toast.success(
+          `Answer ${voteType === 'upvote' ? 'upvoted' : 'downvoted'} successfully`
+        );
+      }
+    } catch (error) {
+      console.error("Failed to vote:", error);
+      // Error toast is handled by axios interceptor
+    } finally {
+      setIsVoting(false);
     }
   };
 
@@ -94,9 +138,9 @@ export function QACard({
           <div className="flex flex-col items-center gap-2">
             <div
               className={`flex flex-col items-center gap-1 p-2 rounded-full transition-colors ${
-                userVote === "up"
+                localUserVote === "upvote"
                   ? "bg-primary"
-                  : userVote === "down"
+                  : localUserVote === "downvote"
                   ? "bg-violet-600"
                   : "bg-foreground-200"
               }`}
@@ -107,18 +151,20 @@ export function QACard({
                 radius="full"
                 className="h-8 w-8 p-0 hover:text-primary transition-colors"
                 isIconOnly
-                onPress={() => handleVote("up")}
+                onPress={() => handleVote("upvote")}
+                isDisabled={isVoting}
               >
                 <ArrowUp className="h-4 w-4" />
               </Button>
-              <span className="font-bold text-base">{votes}</span>
+              <span className="font-bold text-base">{localVotes}</span>
               <Button
                 variant="light"
                 size="sm"
                 radius="full"
                 className="h-8 w-8 p-0 hover:text-violet-600 transition-colors"
                 isIconOnly
-                onPress={() => handleVote("down")}
+                onPress={() => handleVote("downvote")}
+                isDisabled={isVoting}
               >
                 <ArrowDown className="h-4 w-4" />
               </Button>

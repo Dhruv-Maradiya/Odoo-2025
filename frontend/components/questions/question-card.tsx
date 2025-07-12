@@ -19,46 +19,43 @@ import { formatDistanceToNow } from "date-fns";
 import type { Question } from "@/types/api";
 import { getApiClient } from "@/lib/api-client";
 import { useSession } from "next-auth/react";
+import { toast } from "@/lib/toast";
 
 interface QuestionCardProps {
   question: Question;
 }
 
 export function QuestionCard({ question }: QuestionCardProps) {
-  const [votes, setVotes] = useState(question.vote_count);
   const { data: session } = useSession();
-  const [userVote, setUserVote] = useState<"upvote" | "downvote" | null>(
-    question.user_vote || null
-  );
+  const [isVoting, setIsVoting] = useState(false);
+  const [localVotes, setLocalVotes] = useState(question.vote_count);
+  const [localUserVote, setLocalUserVote] = useState(question.user_vote);
 
   const handleVote = async (type: "upvote" | "downvote") => {
-    let adjustment = 0;
-    if (userVote === type) {
-      adjustment = type === "upvote" ? -1 : 1;
-      setVotes((prev) => prev + adjustment);
-      setUserVote(null);
-    } else {
-      adjustment = userVote
-        ? type === "upvote"
-          ? 2
-          : -2
-        : type === "upvote"
-        ? 1
-        : -1;
-      setVotes((prev) => prev + adjustment);
-      setUserVote(type);
+    if (!session?.accessToken) {
+      toast.error("Please log in to vote", "You need to be logged in to vote on questions");
+      return;
     }
 
+    if (isVoting) return;
+
+    setIsVoting(true);
     try {
-      const apiClient = getApiClient(session?.accessToken);
+      const apiClient = getApiClient(session.accessToken);
       const result = await apiClient.voteQuestion(question.question_id, type);
-      setVotes(result.vote_count);
-      setUserVote(result.user_vote);
+      
+      setLocalVotes(result.vote_count);
+      setLocalUserVote(result.user_vote);
+      
+      toast.success(
+        `Question ${type === 'upvote' ? 'upvoted' : 'downvoted'} successfully`,
+        `Total votes: ${result.vote_count}`
+      );
     } catch (error) {
-      // Optionally roll back state on error
-      setVotes((prev) => prev - adjustment);
-      setUserVote(userVote);
       console.error("Failed to vote:", error);
+      // Error toast is handled by axios interceptor
+    } finally {
+      setIsVoting(false);
     }
   };
 
@@ -131,9 +128,9 @@ export function QuestionCard({ question }: QuestionCardProps) {
                 <div className="flex items-center justify-start gap-2 text-muted-foreground">
                   <div
                     className={`flex flex-row items-center p-1 gap-2 rounded-full text-foreground ${
-                      userVote === "upvote"
+                      localUserVote === "upvote"
                         ? "bg-primary"
-                        : userVote === "downvote"
+                        : localUserVote === "downvote"
                         ? "bg-violet-600"
                         : "bg-foreground-200"
                     }`}
@@ -145,10 +142,11 @@ export function QuestionCard({ question }: QuestionCardProps) {
                       className={`h-8 w-8 p-0 hover:text-primary`}
                       isIconOnly
                       onPress={() => handleVote("upvote")}
+                      isDisabled={isVoting}
                     >
                       <ArrowUp className="h-4 w-4" />
                     </Button>
-                    <span className={`font-bold text-base`}>{votes || 0}</span>
+                    <span className={`font-bold text-base`}>{localVotes || 0}</span>
                     <Button
                       variant="light"
                       size="sm"
@@ -156,6 +154,7 @@ export function QuestionCard({ question }: QuestionCardProps) {
                       className={`h-8 w-8 p-0 hover:text-violet-600`}
                       isIconOnly
                       onPress={() => handleVote("downvote")}
+                      isDisabled={isVoting}
                     >
                       <ArrowDown className="h-4 w-4" />
                     </Button>

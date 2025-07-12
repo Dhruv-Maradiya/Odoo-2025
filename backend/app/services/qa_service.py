@@ -84,7 +84,7 @@ class QAService:
         return await self.get_question_by_id(str(test.inserted_id))
 
     async def get_question_by_id(
-        self, question_id: str, increment_view: bool = False
+        self, question_id: str, increment_view: bool = False, user_id: str = None
     ) -> Optional[QuestionModel]:
         """Get a question by ID with all answers and comments."""
         if increment_view:
@@ -103,8 +103,17 @@ class QAService:
         if not author:
             return None
 
+        # Get user's vote if user_id is provided
+        user_vote = None
+        if user_id:
+            vote_doc = await self.votes.find_one(
+                {"question_id": question_id, "user_id": user_id}
+            )
+            if vote_doc:
+                user_vote = vote_doc["vote_type"]
+
         # Get answers with comments and votes
-        answers = await self._get_question_answers(question_id)
+        answers = await self._get_question_answers(question_id, user_id)
 
         return QuestionModel(
             question_id=str(question_doc["_id"]),
@@ -116,6 +125,8 @@ class QAService:
             view_count=question_doc["view_count"],
             answer_count=question_doc["answer_count"],
             has_accepted_answer=question_doc["has_accepted_answer"],
+            vote_count=question_doc.get("vote_count", 0),
+            user_vote=user_vote,
             answers=answers,
             created_at=question_doc["created_at"],
             updated_at=question_doc.get("updated_at"),
@@ -185,13 +196,13 @@ class QAService:
         return result.deleted_count > 0
 
     async def search_questions(
-        self, search_request: QuestionSearchRequest
+        self, search_request: QuestionSearchRequest, user_id: str = None
     ) -> QuestionSearchResponse:
         """Search questions with filters and pagination."""
 
         # Use semantic search if there's a query
         if search_request.query:
-            return await self._semantic_search_questions(search_request)
+            return await self._semantic_search_questions(search_request, user_id)
 
         # Traditional MongoDB search for non-query searches
         filters: Dict[str, Any] = {}
@@ -229,6 +240,15 @@ class QAService:
         for doc in question_docs:
             author = await self._get_user_info(doc["author_id"])
             if author:
+                # Get user's vote if user_id is provided
+                user_vote = None
+                if user_id:
+                    vote_doc = await self.votes.find_one(
+                        {"question_id": str(doc["_id"]), "user_id": user_id}
+                    )
+                    if vote_doc:
+                        user_vote = vote_doc["vote_type"]
+
                 questions.append(
                     QuestionListModel(
                         question_id=str(doc["_id"]),
@@ -238,6 +258,8 @@ class QAService:
                         view_count=doc["view_count"],
                         answer_count=doc["answer_count"],
                         has_accepted_answer=doc["has_accepted_answer"],
+                        vote_count=doc.get("vote_count", 0),
+                        user_vote=user_vote,
                         created_at=doc["created_at"],
                     )
                 )
@@ -252,7 +274,7 @@ class QAService:
         )
 
     async def _semantic_search_questions(
-        self, search_request: QuestionSearchRequest
+        self, search_request: QuestionSearchRequest, user_id: str = None
     ) -> QuestionSearchResponse:
         """Perform semantic search using ChromaDB."""
 
@@ -314,6 +336,15 @@ class QAService:
                 doc = question_map[question_id]
                 author = await self._get_user_info(doc["author_id"])
                 if author:
+                    # Get user's vote if user_id is provided
+                    user_vote = None
+                    if user_id:
+                        vote_doc = await self.votes.find_one(
+                            {"question_id": question_id, "user_id": user_id}
+                        )
+                        if vote_doc:
+                            user_vote = vote_doc["vote_type"]
+
                     questions.append(
                         QuestionListModel(
                             question_id=str(doc["_id"]),
@@ -323,6 +354,8 @@ class QAService:
                             view_count=doc["view_count"],
                             answer_count=doc["answer_count"],
                             has_accepted_answer=doc["has_accepted_answer"],
+                            vote_count=doc.get("vote_count", 0),
+                            user_vote=user_vote,
                             created_at=doc["created_at"],
                         )
                     )
@@ -398,7 +431,7 @@ class QAService:
                 related_id=question_id,
             )
 
-        return await self._get_answer_by_id(answer_id)
+        return await self._get_answer_by_id(answer_id, user_id=user_id)
 
     async def vote_answer(
         self, answer_id: str, vote_data: VoteRequest, user_id: str
@@ -531,7 +564,7 @@ class QAService:
                     {"$inc": {"downvotes": 1, "vote_count": -1}},
                 )
 
-        return await self.get_question_by_id(question_id)
+        return await self.get_question_by_id(question_id, user_id=user_id)
 
     async def accept_answer(
         self, question_id: str, answer_id: str, user_id: str
@@ -941,7 +974,7 @@ class QAService:
             )
         return None
 
-    async def _get_question_answers(self, question_id: str) -> List[AnswerModel]:
+    async def _get_question_answers(self, question_id: str, user_id: str = None) -> List[AnswerModel]:
         """Get all answers for a question."""
         cursor = self.answers.find({"question_id": question_id}).sort("created_at", 1)
         answers = []
@@ -949,6 +982,15 @@ class QAService:
         async for doc in cursor:
             author = await self._get_user_info(doc["author_id"])
             if author:
+                # Get user's vote for this answer if user_id is provided
+                user_vote = None
+                if user_id:
+                    vote_doc = await self.votes.find_one(
+                        {"answer_id": doc["_id"], "user_id": user_id}
+                    )
+                    if vote_doc:
+                        user_vote = vote_doc["vote_type"]
+
                 answer = AnswerModel(
                     answer_id=doc["_id"],
                     question_id=doc["question_id"],
@@ -960,13 +1002,14 @@ class QAService:
                     upvotes=doc.get("upvotes", 0),
                     downvotes=doc.get("downvotes", 0),
                     is_accepted=doc.get("is_accepted", False),
+                    user_vote=user_vote,
                     comments=[],  # Comments would be loaded separately if needed
                 )
                 answers.append(answer)
 
         return answers
 
-    async def _get_answer_by_id(self, answer_id: str) -> Optional[AnswerModel]:
+    async def _get_answer_by_id(self, answer_id: str, user_id: str = None) -> Optional[AnswerModel]:
         """Get an answer by ID."""
         doc = await self.answers.find_one({"_id": answer_id})
         if not doc:
@@ -975,6 +1018,15 @@ class QAService:
         author = await self._get_user_info(doc["author_id"])
         if not author:
             return None
+
+        # Get user's vote for this answer if user_id is provided
+        user_vote = None
+        if user_id:
+            vote_doc = await self.votes.find_one(
+                {"answer_id": answer_id, "user_id": user_id}
+            )
+            if vote_doc:
+                user_vote = vote_doc["vote_type"]
 
         return AnswerModel(
             answer_id=doc["_id"],
@@ -987,6 +1039,7 @@ class QAService:
             upvotes=doc.get("upvotes", 0),
             downvotes=doc.get("downvotes", 0),
             is_accepted=doc.get("is_accepted", False),
+            user_vote=user_vote,
             comments=[],  # Comments would be loaded separately if needed
         )
 

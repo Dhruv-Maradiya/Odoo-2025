@@ -1,4 +1,4 @@
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosInstance, AxiosError } from 'axios';
 import type {
   Question,
   QuestionWithAnswers,
@@ -21,7 +21,7 @@ import type {
   PaginationParams,
   User,
 } from '@/types/api';
-import { useSession } from "next-auth/react";
+import { toast } from './toast';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
@@ -35,6 +35,63 @@ class ApiClient {
         'Content-Type': 'application/json',
         ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       },
+    });
+
+    // Add response interceptor for error handling
+    this.client.interceptors.response.use(
+      (response) => response,
+      (error: AxiosError) => {
+        this.handleApiError(error);
+        return Promise.reject(error);
+      }
+    );
+  }
+
+  private handleApiError(error: AxiosError) {
+    let title = 'Error';
+    let description = 'Something went wrong';
+
+    if (error.response) {
+      const status = error.response.status;
+      const data = error.response.data as any;
+
+      switch (status) {
+        case 401:
+          title = 'Authentication Required';
+          description = data?.detail || 'Please log in to perform this action';
+          break;
+        case 403:
+          title = 'Access Denied';
+          description = data?.detail || 'You do not have permission to perform this action';
+          break;
+        case 404:
+          title = 'Not Found';
+          description = data?.detail || 'The requested resource was not found';
+          break;
+        case 422:
+          title = 'Validation Error';
+          description = data?.detail || 'Please check your input and try again';
+          break;
+        case 500:
+          title = 'Server Error';
+          description = data?.detail || 'An internal server error occurred';
+          break;
+        default:
+          title = `Error ${status}`;
+          description = data?.detail || 'An unexpected error occurred';
+      }
+    } else if (error.request) {
+      title = 'Network Error';
+      description = 'Unable to connect to the server. Please check your internet connection.';
+    } else {
+      title = 'Request Error';
+      description = error.message || 'An error occurred while processing your request';
+    }
+
+    toast.show({
+      title,
+      description,
+      variant: 'destructive',
     });
   }
 
@@ -183,6 +240,14 @@ class ApiClient {
 export const apiClient = new ApiClient();
 
 export const getApiClient = (accessToken?: string) => new ApiClient(accessToken);
+
+// Function to get authenticated client for voting operations
+export const getAuthenticatedClient = (accessToken?: string) => {
+  if (!accessToken) {
+    throw new Error('Authentication required for this operation');
+  }
+  return new ApiClient(accessToken);
+};
 
 // Usage example in a React component/hook:
 // const { data: session } = useSession();
