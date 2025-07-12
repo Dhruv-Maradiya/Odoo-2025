@@ -13,10 +13,19 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const backendUrl = process.env.BACKEND_URL;
+    if (!backendUrl) {
+      console.error("BACKEND_URL environment variable is not set");
+      return NextResponse.json(
+        { error: "Backend configuration error" },
+        { status: 500 }
+      );
+    }
+
     const questionId = params.id;
 
     const backendResponse = await fetch(
-      `${process.env.BACKEND_URL}/api/v1/qa/admin/questions/${questionId}`,
+      `${backendUrl}/api/v1/qa/admin/questions/${questionId}`,
       {
         method: "DELETE",
         headers: {
@@ -58,14 +67,21 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const backendUrl = process.env.BACKEND_URL;
+    if (!backendUrl) {
+      console.error("BACKEND_URL environment variable is not set");
+      return NextResponse.json(
+        { error: "Backend configuration error" },
+        { status: 500 }
+      );
+    }
+
     const questionId = params.id;
     const { searchParams } = new URL(request.url);
     const reason = searchParams.get("reason") || "Flagged by admin";
 
     const backendResponse = await fetch(
-      `${
-        process.env.BACKEND_URL
-      }/api/v1/qa/admin/questions/${questionId}/flag?reason=${encodeURIComponent(
+      `${backendUrl}/api/v1/qa/admin/questions/${questionId}/flag?reason=${encodeURIComponent(
         reason
       )}`,
       {

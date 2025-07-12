@@ -10,6 +10,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const backendUrl = process.env.BACKEND_URL;
+    if (!backendUrl) {
+      console.error("BACKEND_URL environment variable is not set");
+      return NextResponse.json(
+        { error: "Backend configuration error" },
+        { status: 500 }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const query = searchParams.get("query");
     const tags = searchParams.getAll("tags");
@@ -33,7 +42,7 @@ export async function GET(request: NextRequest) {
     params.set("limit", limit.toString());
 
     const backendResponse = await fetch(
-      `${process.env.BACKEND_URL}/api/v1/qa/admin/questions?${params}`,
+      `${backendUrl}/api/v1/qa/admin/questions?${params}`,
       {
         headers: {
           Authorization: `Bearer ${session.accessToken}`,
