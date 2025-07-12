@@ -8,7 +8,7 @@ import { Header } from "@/components/layout/header";
 import { QuestionCard } from "@/components/questions/question-card";
 import { QuestionFilters } from "@/components/questions/question-filters";
 import { Button } from "@/components/ui/button";
-import { useQuestions } from "@/hooks/use-question-queries";
+import { useQuestions } from "@/hooks/use-questions";
 import { useCurrentUser } from "@/hooks/use-auth-queries";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -44,7 +44,6 @@ export default function HomePage() {
     data: questionsResponse,
     isLoading,
     error,
-    refetch,
   } = useQuestions(searchParams);
 
   const handleFilterToggle = (filter: string) => {
@@ -86,7 +85,7 @@ export default function HomePage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => refetch()}
+                onClick={() => window.location.reload()}
                 className="ml-2"
               >
                 Retry

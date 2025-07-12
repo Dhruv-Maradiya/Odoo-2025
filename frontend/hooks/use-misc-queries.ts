@@ -1,78 +1,79 @@
-import { useMutation, useQuery, useQueryClient, UseQueryOptions } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import type {
-    User,
-    PaginationParams,
-    ImageUploadRequest,
-    ImageUploadResponse,
-} from '@/types/api';
+import type { User } from '@/types/api';
 
-// Query Keys
-export const userKeys = {
-    all: ['users'] as const,
-    lists: () => [...userKeys.all, 'list'] as const,
-    list: (params?: PaginationParams) => [...userKeys.lists(), params] as const,
-    details: () => [...userKeys.all, 'detail'] as const,
-    detail: (id: string) => [...userKeys.details(), id] as const,
+// Simple hook for fetching users
+export const useUsers = (params?: any) => {
+    const [data, setData] = useState<{ users: User[]; pagination: any } | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<Error | null>(null);
+
+    useEffect(() => {
+        const fetchUsers = async () => {
+            try {
+                setIsLoading(true);
+                setError(null);
+                const result = await apiClient.getUsers(params);
+                setData(result);
+            } catch (err) {
+                setError(err as Error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        fetchUsers();
+    }, [JSON.stringify(params)]);
+
+    return { data, isLoading, error };
 };
 
-export const imageKeys = {
-    all: ['images'] as const,
-    upload: (type: string, relatedId?: string) => [...imageKeys.all, 'upload', type, relatedId] as const,
+// Simple hook for fetching a single user
+export const useUser = (id: string) => {
+    const [data, setData] = useState<User | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<Error | null>(null);
+
+    useEffect(() => {
+        if (!id) return;
+
+        const fetchUser = async () => {
+            try {
+                setIsLoading(true);
+                setError(null);
+                const result = await apiClient.getUserById(id);
+                setData(result);
+            } catch (err) {
+                setError(err as Error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        fetchUser();
+    }, [id]);
+
+    return { data, isLoading, error };
 };
 
-// Users Queries
-export const useUsers = (
-    params?: PaginationParams,
-    options?: UseQueryOptions<{ users: User[]; pagination: any }>
-) => {
-    return useQuery({
-        queryKey: userKeys.list(params),
-        queryFn: () => apiClient.getUsers(params),
-        staleTime: 5 * 60 * 1000, // 5 minutes
-        ...options,
-    });
-};
-
-export const useUser = (id: string, options?: UseQueryOptions<User>) => {
-    return useQuery({
-        queryKey: userKeys.detail(id),
-        queryFn: () => apiClient.getUserById(id),
-        enabled: !!id,
-        staleTime: 5 * 60 * 1000, // 5 minutes
-        ...options,
-    });
-};
-
-// Users Mutations
+// Simple function for deleting a user
 export const useDeleteUser = () => {
-    const queryClient = useQueryClient();
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<Error | null>(null);
 
-    return useMutation({
-        mutationFn: (id: string) => apiClient.deleteUser(id),
-        onSuccess: (_, deletedId) => {
-            // Remove from cache
-            queryClient.removeQueries({ queryKey: userKeys.detail(deletedId) });
+    const deleteUser = async (id: string) => {
+        try {
+            setIsLoading(true);
+            setError(null);
+            const result = await apiClient.deleteUser(id);
+            return result;
+        } catch (err) {
+            setError(err as Error);
+            throw err;
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
-            // Invalidate users list
-            queryClient.invalidateQueries({ queryKey: userKeys.lists() });
-        },
-    });
-};
-
-// Image Upload Mutation
-export const useUploadImage = () => {
-    const queryClient = useQueryClient();
-
-    return useMutation({
-        mutationFn: ({ file, uploadRequest }: { file: File; uploadRequest: ImageUploadRequest }) =>
-            apiClient.uploadImage(file, uploadRequest),
-        onSuccess: (data) => {
-            // Optionally cache the uploaded image data
-            queryClient.setQueryData(
-                imageKeys.upload(data.upload_type, data.related_id),
-                data
-            );
-        },
-    });
+    return { deleteUser, isLoading, error };
 };

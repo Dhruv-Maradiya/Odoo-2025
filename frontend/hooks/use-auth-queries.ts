@@ -1,59 +1,99 @@
-import { useMutation, useQuery, useQueryClient, UseQueryOptions } from '@tanstack/react-query';
+import { useState } from 'react';
 import { signIn, signOut, useSession } from 'next-auth/react';
-import type {
-    LoginRequest,
-    RegisterRequest,
-    AuthResponse,
-    PasswordChangeRequest,
-    CurrentUser,
-} from '@/types/api';
+import type { LoginRequest, RegisterRequest } from '@/types/api';
 
-// Query Keys
-export const authKeys = {
-    all: ['auth'] as const,
-    currentUser: () => [...authKeys.all, 'current-user'] as const,
-};
-
-// Auth Queries
-export const useCurrentUser = (options?: UseQueryOptions<CurrentUser>) => {
+// Simple hook for getting current user using NextAuth
+export const useCurrentUser = () => {
     const { data: session, status } = useSession();
+
     return {
-        user: session?.user || null,
+        data: session?.user || null,
         isLoading: status === 'loading',
-        isAuthenticated: status === 'authenticated',
-        isUnauthenticated: status === 'unauthenticated',
+        error: null,
     };
 };
 
-// Auth Mutations
+// Simple function for login using NextAuth
 export const useLogin = () => {
-    return useMutation({
-        mutationFn: async (credentials: LoginRequest) => {
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<Error | null>(null);
+
+    const login = async (credentials: LoginRequest) => {
+        try {
+            setIsLoading(true);
+            setError(null);
             const result = await signIn('credentials', {
                 email: credentials.email,
                 password: credentials.password,
                 redirect: false,
             });
-            if (result?.error) throw new Error(result.error);
+
+            if (result?.error) {
+                throw new Error(result.error);
+            }
+
             return result;
-        },
-    });
+        } catch (err) {
+            setError(err as Error);
+            throw err;
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return { login, isLoading, error };
 };
 
+// Simple function for register
 export const useRegister = () => {
-    return useMutation({
-        mutationFn: async (userData: RegisterRequest) => {
-            // Call your registration API endpoint directly here if needed
-            // Then sign in with NextAuth
-            throw new Error('Implement registration via NextAuth or custom API');
-        },
-    });
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<Error | null>(null);
+
+    const register = async (userData: RegisterRequest) => {
+        try {
+            setIsLoading(true);
+            setError(null);
+            // For now, we'll use signIn after registration
+            // You might want to implement a separate registration endpoint
+            const result = await signIn('credentials', {
+                email: userData.email,
+                password: userData.password,
+                redirect: false,
+            });
+
+            if (result?.error) {
+                throw new Error(result.error);
+            }
+
+            return result;
+        } catch (err) {
+            setError(err as Error);
+            throw err;
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return { register, isLoading, error };
 };
 
+// Simple function for logout using NextAuth
 export const useLogout = () => {
-    return useMutation({
-        mutationFn: async () => {
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<Error | null>(null);
+
+    const logout = async () => {
+        try {
+            setIsLoading(true);
+            setError(null);
             await signOut({ redirect: false });
-        },
-    });
+        } catch (err) {
+            setError(err as Error);
+            throw err;
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return { logout, isLoading, error };
 };

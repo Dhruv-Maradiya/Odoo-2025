@@ -1,98 +1,117 @@
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { LoginRequest, RegisterRequest } from "@/types/api";
+import { useState } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
-export function useLogin() {
+// Simple hook for login
+export const useLogin = () => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
   const router = useRouter();
-  const queryClient = useQueryClient();
 
-  return useMutation({
-    mutationFn: async (credentials: LoginRequest) => {
-      // Use NextAuth signIn, which now calls FastAPI /auth/login via credentials provider
+  const login = async (email: string, password: string) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
       const result = await signIn("credentials", {
-        email: credentials.email,
-        password: credentials.password,
+        email,
+        password,
         redirect: false,
       });
-      if (result?.error) throw new Error(result.error);
-      return result;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["user"] });
-      toast.success("Login successful!");
-      router.push("/");
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || "Login failed");
-    },
-  });
-}
 
-export function useRegister() {
-  const router = useRouter();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (userData: RegisterRequest) => {
-      // Register with FastAPI backend
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1"}/auth/register`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(userData),
-        }
-      );
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Registration failed");
+      if (result?.error) {
+        throw new Error(result.error);
       }
-      // After successful registration, sign in with NextAuth
-      const signInResult = await signIn("credentials", {
-        email: userData.email,
-        password: userData.password,
+
+      if (result?.ok) {
+        toast.success("Login successful", "Welcome back!");
+        router.push("/");
+      }
+    } catch (err) {
+      setError(err as Error);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return { login, isLoading, error };
+};
+
+// Simple hook for register
+export const useRegister = () => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const router = useRouter();
+
+  const register = async (email: string, password: string, name: string) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      // For now, we'll use signIn after registration
+      // You might want to implement a separate registration endpoint
+      const result = await signIn("credentials", {
+        email,
+        password,
         redirect: false,
       });
-      if (signInResult?.error) throw new Error(signInResult.error);
-      return await response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["user"] });
-      toast.success("Registration successful!");
-      router.push("/");
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || "Registration failed");
-    },
-  });
-}
 
-export function useLogout() {
+      if (result?.error) {
+        throw new Error(result.error);
+      }
+
+      if (result?.ok) {
+        toast.success("Registration successful", "Welcome to StackIt!");
+        router.push("/");
+      }
+    } catch (err) {
+      setError(err as Error);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return { register, isLoading, error };
+};
+
+// Simple hook for logout
+export const useLogout = () => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
   const router = useRouter();
-  const queryClient = useQueryClient();
 
-  return useMutation({
-    mutationFn: async () => {
+  const logout = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
       await signOut({ redirect: false });
-    },
-    onSuccess: () => {
-      queryClient.clear();
-      toast.success("Logged out successfully!");
-      router.push("/auth/login");
-    },
-  });
-}
+      toast.success("Logged out successfully", "Come back soon!");
+      router.push("/");
+    } catch (err) {
+      setError(err as Error);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-export function useCurrentUser() {
+  return { logout, isLoading, error };
+};
+
+// Simple hook for current session
+export const useAuth = () => {
   const { data: session, status } = useSession();
+
   return {
     user: session?.user || null,
     isLoading: status === "loading",
     isAuthenticated: status === "authenticated",
     isUnauthenticated: status === "unauthenticated",
   };
-}
+};

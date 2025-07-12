@@ -32,7 +32,15 @@ export function QuestionCard({ question }: QuestionCardProps) {
   const [localUserVote, setLocalUserVote] = useState(question.user_vote);
 
   const handleVote = async (type: "upvote" | "downvote") => {
+    // Debug: Log session info
+    console.log("Session:", session);
+    console.log("Session type:", typeof session);
+    console.log("Access token:", session?.accessToken);
+    console.log("Session keys:", session ? Object.keys(session) : "No session");
+    console.log("User:", session?.user);
+    
     if (!session?.accessToken) {
+      console.log("No access token found in session");
       toast.error("Please log in to vote", "You need to be logged in to vote on questions");
       return;
     }
@@ -41,6 +49,7 @@ export function QuestionCard({ question }: QuestionCardProps) {
 
     setIsVoting(true);
     try {
+      console.log("Creating API client with token:", session.accessToken.substring(0, 20) + "...");
       const apiClient = getApiClient(session.accessToken);
       const result = await apiClient.voteQuestion(question.question_id, type);
       

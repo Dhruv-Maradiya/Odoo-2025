@@ -1,153 +1,98 @@
 "use client";
 
-import React, { useRef, useState } from "react";
-import { useSession } from "next-auth/react";
-import { useMutation } from "@tanstack/react-query";
-import { Avatar, Button, Progress } from "@heroui/react";
-import { toast } from "sonner";
-import { Camera, Upload } from "lucide-react";
+import { useState } from "react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { apiClient } from "@/lib/api-client";
+import { toast } from "@/lib/toast";
+import type { ImageUploadRequest } from "@/types/api";
 
 interface ProfileAvatarProps {
-  currentImageUrl?: string;
-  userName: string;
-  onImageUpdate: (imageUrl: string) => void;
+  currentAvatar?: string;
+  userId: string;
+  onAvatarUpdate?: (newAvatarUrl: string) => void;
 }
 
-export function ProfileAvatar({
-  currentImageUrl,
-  userName,
-  onImageUpdate,
-}: ProfileAvatarProps) {
-  const { data: session } = useSession();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
-
-  // Upload avatar mutation
-  const uploadAvatarMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const response = await fetch("/api/profile/avatar", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to upload image");
-      }
-
-      return response.json();
-    },
-    onSuccess: (data) => {
-      toast.success("Profile picture updated successfully!");
-      onImageUpdate(data.image_url);
-      setUploadProgress(0);
-    },
-    onError: (error) => {
-      toast.error(error.message || "Failed to upload image");
-      setUploadProgress(0);
-    },
-  });
+export function ProfileAvatar({ currentAvatar, userId, onAvatarUpdate }: ProfileAvatarProps) {
+  const [isUploading, setIsUploading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file) return;
-
-    // Validate file type
-    if (!file.type.startsWith("image/")) {
-      toast.error("Please select an image file");
-      return;
+    if (file) {
+      setSelectedFile(file);
     }
-
-    // Validate file size (max 5MB)
-    const maxSize = 5 * 1024 * 1024; // 5MB
-    if (file.size > maxSize) {
-      toast.error("Image size must be less than 5MB");
-      return;
-    }
-
-    // Start upload
-    setUploadProgress(0);
-    uploadAvatarMutation.mutate(file);
   };
 
-  const handleUploadClick = () => {
-    fileInputRef.current?.click();
+  const handleUpload = async () => {
+    if (!selectedFile) {
+      toast.error("No file selected", "Please select an image file to upload");
+      return;
+    }
+
+    try {
+      setIsUploading(true);
+      
+      const uploadRequest: ImageUploadRequest = {
+        upload_type: "profile_avatar",
+        related_id: userId,
+      };
+
+      const result = await apiClient.uploadImage(selectedFile, uploadRequest);
+      
+      toast.success("Avatar updated successfully", "Your profile picture has been updated");
+      
+      if (onAvatarUpdate) {
+        onAvatarUpdate(result.image_url);
+      }
+      
+      setSelectedFile(null);
+    } catch (error) {
+      console.error("Failed to upload avatar:", error);
+      // Error toast is handled by axios interceptor
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   return (
-    <div className="relative group">
-      {/* Avatar */}
-      <div className="relative">
-        <Avatar
-          src={currentImageUrl}
-          name={userName}
-          size="lg"
-          className="w-24 h-24 text-large"
-          classNames={{
-            base: "ring-4 ring-background",
-          }}
-        />
-
-        {/* Upload overlay */}
-        <div
-          className={`
-            absolute inset-0 rounded-full bg-black/50 flex items-center justify-center
-            opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer
-            ${uploadAvatarMutation.isPending ? "opacity-100" : ""}
-          `}
-          onClick={handleUploadClick}
-        >
-          {uploadAvatarMutation.isPending ? (
-            <div className="text-white text-center">
-              <Upload className="w-6 h-6 mx-auto animate-pulse" />
-              <p className="text-xs mt-1">Uploading...</p>
-            </div>
-          ) : (
-            <div className="text-white text-center">
-              <Camera className="w-6 h-6 mx-auto" />
-              <p className="text-xs mt-1">Change</p>
-            </div>
-          )}
+    <Card className="shadow-none bg-foreground-50 outline-1 outline-foreground-100 rounded-2xl">
+      <CardHeader>
+        <CardTitle>Profile Picture</CardTitle>
+        <CardDescription>
+          Upload a new profile picture. Supported formats: JPG, PNG, GIF (max 5MB)
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center gap-4">
+          <Avatar className="h-20 w-20">
+            <AvatarImage src={currentAvatar} alt="Profile" />
+            <AvatarFallback>U</AvatarFallback>
+          </Avatar>
+          <div className="space-y-2">
+            <Label htmlFor="avatar-upload">Upload new image</Label>
+            <Input
+              id="avatar-upload"
+              type="file"
+              accept="image/*"
+              onChange={handleFileSelect}
+              disabled={isUploading}
+            />
+          </div>
         </div>
-      </div>
-
-      {/* Upload progress */}
-      {uploadAvatarMutation.isPending && (
-        <div className="absolute -bottom-4 left-1/2 transform -translate-x-1/2 w-full">
-          <Progress
-            size="sm"
-            isIndeterminate
-            aria-label="Uploading image..."
+        {selectedFile && (
+          <Button
+            onClick={handleUpload}
+            disabled={isUploading}
             className="w-full"
-          />
-        </div>
-      )}
-
-      {/* Hidden file input */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        onChange={handleFileSelect}
-        className="hidden"
-        disabled={uploadAvatarMutation.isPending}
-      />
-
-      {/* Upload button for mobile/accessibility */}
-      <div className="mt-6 sm:hidden">
-        <Button
-          size="sm"
-          variant="bordered"
-          onClick={handleUploadClick}
-          isLoading={uploadAvatarMutation.isPending}
-          startContent={<Camera className="w-4 h-4" />}
-        >
-          Change Photo
-        </Button>
-      </div>
-    </div>
+          >
+            {isUploading ? "Uploading..." : "Upload Avatar"}
+          </Button>
+        )}
+      </CardContent>
+    </Card>
   );
 }

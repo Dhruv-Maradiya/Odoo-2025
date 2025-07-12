@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { Button, Input } from "@heroui/react";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +12,8 @@ import { RichTextEditor } from "@/components/editor/rich-text-editor";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { BubbleChatQuestionIcon } from "@hugeicons/core-free-icons";
 import { useCurrentUser } from "@/hooks/use-auth-queries";
-import { useCreateQuestion } from "@/hooks/use-question-queries";
+import { apiClient } from "@/lib/api-client";
+import { toast } from "@/lib/toast";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useForm } from "react-hook-form";
@@ -35,7 +37,9 @@ type QuestionFormData = z.infer<typeof questionSchema>;
 
 export default function AskQuestionPage() {
   const router = useRouter();
+  const { data: session } = useSession();
   const [tagInput, setTagInput] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Get current user
   const { data: currentUser, isLoading: userLoading } = useCurrentUser();
@@ -60,9 +64,6 @@ export default function AskQuestionPage() {
   const watchedTags = watch("tags");
   const watchedDescription = watch("description");
 
-  // Create question mutation
-  const createQuestionMutation = useCreateQuestion();
-
   const handleAddTag = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" || e.key === ",") {
       e.preventDefault();
@@ -82,27 +83,32 @@ export default function AskQuestionPage() {
   };
 
   const onSubmit = async (data: QuestionFormData) => {
-    if (!currentUser) {
+    if (!currentUser || !session?.accessToken) {
       router.push("/auth/login");
       return;
     }
 
     try {
+      setIsSubmitting(true);
+      
       const questionData: QuestionCreateRequest = {
         title: data.title,
         description: data.description,
         tags: data.tags,
       };
 
-      const newQuestion = await createQuestionMutation.mutateAsync(
-        questionData
-      );
+      const newQuestion = await apiClient.createQuestion(questionData);
 
+      toast.success("Question created successfully", "Your question has been posted");
+      
       // Reset form and redirect to the new question
       reset();
       router.push(`/question/${newQuestion.question_id}`);
     } catch (error) {
       console.error("Failed to create question:", error);
+      toast.error("Failed to create question", "Please try again");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -162,15 +168,6 @@ export default function AskQuestionPage() {
                   </p>
                 </CardHeader>
                 <CardContent className="space-y-6 pt-4">
-                  {/* Error Display */}
-                  {createQuestionMutation.isError && (
-                    <Alert variant="destructive">
-                      <AlertDescription>
-                        Failed to create question. Please try again.
-                      </AlertDescription>
-                    </Alert>
-                  )}
-
                   {/* Title */}
                   <div className="space-y-2">
                     <Input
@@ -253,15 +250,13 @@ export default function AskQuestionPage() {
                   {/* Submit Button */}
                   <div className="flex justify-end">
                     <Button
-                      radius="full"
-                      color="primary"
                       type="submit"
-                      isLoading={createQuestionMutation.isPending}
-                      isDisabled={createQuestionMutation.isPending}
+                      color="primary"
+                      size="lg"
+                      isLoading={isSubmitting}
+                      disabled={isSubmitting}
                     >
-                      {createQuestionMutation.isPending
-                        ? "Posting..."
-                        : "Post Your Question"}
+                      {isSubmitting ? "Posting Question..." : "Post Your Question"}
                     </Button>
                   </div>
                 </CardContent>
@@ -271,39 +266,27 @@ export default function AskQuestionPage() {
             {/* Sidebar */}
             <div className="lg:col-span-1">
               <Card className="shadow-none bg-foreground-50 outline-1 outline-foreground-100 rounded-2xl sticky top-20">
-                <CardHeader className="p-4 pb-0">
-                  <h4 className="font-semibold text-foreground-700">
-                    Tips for Writing a Good Question
-                  </h4>
+                <CardHeader>
+                  <CardTitle className="text-lg">Writing a good question</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4 pt-0 p-4">
-                  <div className="space-y-3">
-                    <div className="p-3 rounded-lg bg-background/60 border border-foreground-100">
-                      <h5 className="font-medium text-sm text-foreground-700 mb-1">
-                        Be Specific
-                      </h5>
-                      <p className="text-xs text-foreground-600">
-                        Provide concrete details about your problem and what
-                        you've tried.
-                      </p>
-                    </div>
-                    <div className="p-3 rounded-lg bg-background/60 border border-foreground-100">
-                      <h5 className="font-medium text-sm text-foreground-700 mb-1">
-                        Include Code
-                      </h5>
-                      <p className="text-xs text-foreground-600">
-                        Share relevant code snippets and error messages.
-                      </p>
-                    </div>
-                    <div className="p-3 rounded-lg bg-background/60 border border-foreground-100">
-                      <h5 className="font-medium text-sm text-foreground-700 mb-1">
-                        Use Tags
-                      </h5>
-                      <p className="text-xs text-foreground-600">
-                        Tag your question with relevant technologies to reach
-                        the right audience.
-                      </p>
-                    </div>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <h4 className="font-medium">Be specific</h4>
+                    <p className="text-sm text-foreground-600">
+                      Include enough detail to help others understand your problem
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <h4 className="font-medium">Show your research</h4>
+                    <p className="text-sm text-foreground-600">
+                      Mention what you've already tried and what didn't work
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <h4 className="font-medium">Include code</h4>
+                    <p className="text-sm text-foreground-600">
+                      Share relevant code snippets and error messages
+                    </p>
                   </div>
                 </CardContent>
               </Card>

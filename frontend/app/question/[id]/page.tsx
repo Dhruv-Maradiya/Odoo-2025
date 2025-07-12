@@ -4,7 +4,7 @@ import { RichTextEditor } from "@/components/editor/rich-text-editor";
 import { Header } from "@/components/layout/header";
 import { QACard } from "@/components/qa/qa-card";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { useQuestion, useSimilarQuestions } from "@/hooks/use-question-queries";
+import { useQuestion, useSimilarQuestions } from "@/hooks/use-questions";
 import { BreadcrumbItem, Breadcrumbs, Button } from "@heroui/react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -16,7 +16,7 @@ import { toast } from "@/lib/toast";
 export default function QuestionDetailPage() {
   const params = useParams();
   const questionId = params.id as string;
-  const { data: questionData, isLoading, error } = useQuestion(questionId);
+  const { data: questionData, isLoading, error } = useQuestion(questionId, true);
   const { data: similarQuestionsData } = useSimilarQuestions(questionId);
   const { data: session } = useSession();
 
