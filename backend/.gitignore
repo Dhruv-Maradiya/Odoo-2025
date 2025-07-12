@@ -39,3 +39,4 @@ uv.lock
 main.tf
 
 chroma-data/
+app/static/*

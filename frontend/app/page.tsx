@@ -48,7 +48,6 @@ const mockQuestions = [
 export default function HomePage() {
   const [sortBy, setSortBy] = useState("newest");
   const [activeFilters, setActiveFilters] = useState<string[]>(["hot"]);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   const handleFilterToggle = (filter: string) => {
     setActiveFilters((prev) =>
@@ -60,10 +59,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Header
-        isLoggedIn={isLoggedIn}
-        onLoginToggle={() => setIsLoggedIn(!isLoggedIn)}
-      />
+      <Header />
 
       <main className="container mx-auto px-4 py-6 max-w-7xl">
         {/* Action Bar */}
@@ -91,20 +87,20 @@ export default function HomePage() {
         {/* Pagination */}
         <div className="flex justify-center mt-8">
           <div className="flex items-center gap-2">
-            <Button variant="bordered" size="sm" disabled>
+            <Button variant="outline" size="sm" disabled>
               Previous
             </Button>
             {[1, 2, 3, 4, 5].map((page) => (
               <Button
                 key={page}
-                variant={page === 1 ? "solid" : "bordered"}
+                variant={page === 1 ? "default" : "outline"}
                 size="sm"
                 className="w-8 h-8"
               >
                 {page}
               </Button>
             ))}
-            <Button variant="bordered" size="sm">
+            <Button variant="outline" size="sm">
               Next
             </Button>
           </div>

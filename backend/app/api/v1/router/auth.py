@@ -28,9 +28,11 @@ router = APIRouter()
 security = HTTPBearer()
 
 
-@router.post("/register", response_model=dict, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register", response_model=UserLoginResponse, status_code=status.HTTP_201_CREATED
+)
 async def register_user(user_data: UserRegistrationRequest):
-    """Register a new user with email and password."""
+    """Register a new user with email and password and return JWT tokens."""
     try:
         user = await create_user(
             email=user_data.email,
@@ -39,16 +41,32 @@ async def register_user(user_data: UserRegistrationRequest):
             role=UserRole.USER,
         )
 
-        return {
-            "message": "User registered successfully",
-            "user": {
+        # Generate tokens immediately after registration
+        access_token_expires = timedelta(
+            minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+        )
+        access_token = AuthUtils.generate_jwt_token(
+            user_id=user["_id"],
+            email=user["email"],
+            role=user["role"],
+            expires_delta=access_token_expires,
+        )
+
+        refresh_token = AuthUtils.generate_refresh_token(user["_id"])
+
+        return UserLoginResponse(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            token_type="bearer",
+            expires_in=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            user={
                 "id": user["_id"],
                 "name": user["name"],
                 "email": user["email"],
                 "role": user["role"],
-                "created_at": user["created_at"],
+                "permissions": user.get("permissions", []),
             },
-        }
+        )
 
     except HTTPException:
         raise

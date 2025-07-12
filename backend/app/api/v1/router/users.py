@@ -9,10 +9,12 @@ from app.api.v1.dependencies import (
     require_role,
 )
 from app.db.mongodb.collections import users_collection
+from app.models.image_models import ImageUploadRequest
 from app.models.user_models import CurrentUserModel, UserRole
+from app.services.image_service import image_service
 from app.services.user_service import get_user_by_id
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 
 router = APIRouter()
 
@@ -191,4 +193,78 @@ async def activate_user(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to activate user",
+        )
+
+
+@router.post(
+    "/{user_id}/upload-image",
+)
+async def upload_user_image(
+    user_id: str,
+    file: UploadFile = File(...),
+    current_user: CurrentUserModel = Depends(require_role(UserRole.USER)),
+):
+    """Upload an image for a user (requires ADMIN role or higher)."""
+    try:
+        upload_data = await image_service.upload_image(
+            file=file,
+            upload_request=ImageUploadRequest(
+                upload_type="profile", related_id=user_id
+            ),
+            user_id=user_id,
+        )
+
+        if not upload_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to upload image"
+            )
+
+        # Update user with image URL
+        result = await users_collection.update_one(
+            {"_id": ObjectId(user_id)}, {"$set": {"image_url": upload_data.url}}
+        )
+
+        return {"message": "Image uploaded successfully", "user": result}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload image: {str(e)}",
+        )
+
+
+@router.put(
+    "/{user_id}",
+    response_model=dict,
+    status_code=status.HTTP_200_OK,
+)
+async def update_user(
+    user_id: str,
+    user_data: dict,
+    current_user: CurrentUserModel = Depends(require_role(UserRole.USER)),
+):
+    """Update user information (requires ADMIN role or higher)."""
+    try:
+        user_id = str(user_id)
+
+        # Update user data
+        result = await users_collection.update_one(
+            {"_id": ObjectId(user_id)}, {"$set": user_data}
+        )
+
+        if result.modified_count == 0:
+            raise HTTPException(
+                status_code=404, detail="User not found or no changes made"
+            )
+
+        return {"message": "User updated successfully"}
+
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update user",
         )
