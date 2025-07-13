@@ -4,7 +4,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@heroui/react";
-import { Comment03Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowDown,
@@ -168,8 +167,8 @@ export function QuestionCard({ question }: QuestionCardProps) {
                       size="sm"
                       radius="full"
                       className={`h-8 w-8 p-0 ${localUserVote === "upvote"
-                          ? "text-white"
-                          : "text-foreground hover:text-primary"
+                        ? "text-white"
+                        : "text-foreground hover:text-primary"
                         }`}
                       isIconOnly
                       onPress={() => handleVote("upvote")}
@@ -183,8 +182,8 @@ export function QuestionCard({ question }: QuestionCardProps) {
                       size="sm"
                       radius="full"
                       className={`h-8 w-8 p-0 ${localUserVote === "downvote"
-                          ? "text-white"
-                          : "text-foreground hover:text-violet-600"
+                        ? "text-white"
+                        : "text-foreground hover:text-violet-600"
                         }`}
                       isIconOnly
                       onPress={() => handleVote("downvote")}
@@ -195,14 +194,14 @@ export function QuestionCard({ question }: QuestionCardProps) {
                   </div>
 
 
-                  <Link href={`/question/${question.question_id}#comments`}>
+                  <Link href={`/question/${question.question_id}`}>
                     <Button
                       variant="flat"
                       radius="full"
                       className="text-base font-bold"
                     >
                       <MessageSquare className="h-4 w-4" />
-                      {question.answer_count || 0}
+                      {question.answer_count || 0} Answer{(question.answer_count || 0) !== 1 ? 's' : ''}
                     </Button>
                   </Link>
 

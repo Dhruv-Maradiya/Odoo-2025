@@ -118,7 +118,7 @@ export function Header({ }: HeaderProps) {
                   <DropdownMenuTrigger asChild>
                     <Avatar className="h-8 w-8 cursor-pointer">
                       <AvatarImage
-                        src={getImageUrl(user?.image) || "https://links.aryanranderiya.com/l/default_user"}
+                        src={getImageUrl(user?.picture) || "https://links.aryanranderiya.com/l/default_user"}
                       />
                       <AvatarFallback>
                         {user?.name?.charAt(0) || <User className="h-4 w-4" />}

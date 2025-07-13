@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useSession } from "next-auth/react";
+import { useSessionRefresh } from "@/hooks/use-session-refresh";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,6 +19,7 @@ interface ProfileAvatarProps {
 
 export function ProfileAvatar({ currentAvatar, userId, onAvatarUpdate }: ProfileAvatarProps) {
   const { data: session } = useSession();
+  const { refreshSession } = useSessionRefresh();
   const [isUploading, setIsUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
@@ -48,6 +50,9 @@ export function ProfileAvatar({ currentAvatar, userId, onAvatarUpdate }: Profile
       }
 
       setSelectedFile(null);
+
+      // Refresh the session to update the profile picture in the header
+      await refreshSession();
     } catch (error) {
       console.error("Failed to upload avatar:", error);
       toast.error("Failed to upload avatar", "Please try again");

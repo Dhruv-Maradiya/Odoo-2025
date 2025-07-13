@@ -25,6 +25,8 @@ export default function QuestionDetailPage() {
 
   const [isVotingQuestion, setIsVotingQuestion] = useState(false);
   const [isVotingAnswer, setIsVotingAnswer] = useState<string | null>(null);
+  const [isAcceptingAnswer, setIsAcceptingAnswer] = useState<string | null>(null);
+  const [isSubmittingAnswer, setIsSubmittingAnswer] = useState(false);
   const [newAnswer, setNewAnswer] = useState("");
 
   // Fetch question data
@@ -188,6 +190,78 @@ export default function QuestionDetailPage() {
     }
   };
 
+  const handleAcceptAnswer = async (answerId: string) => {
+    if (!session?.accessToken) {
+      toast.error("Please log in to accept answers", "You need to be logged in to accept answers");
+      return;
+    }
+
+    if (isAcceptingAnswer === answerId) return;
+
+    setIsAcceptingAnswer(answerId);
+    try {
+      const apiClient = getApiClient(session.accessToken);
+      await apiClient.acceptAnswer(questionId, answerId);
+
+      // Update local state to reflect the accepted answer
+      setQuestionData(prev => prev ? {
+        ...prev,
+        answers: prev.answers.map(a => ({
+          ...a,
+          is_accepted: a.id === answerId
+        })),
+        has_accepted_answer: true
+      } : null);
+
+      toast.success("Answer accepted", "This answer has been marked as accepted");
+    } catch (error) {
+      console.error("Failed to accept answer:", error);
+      // Error toast is handled by axios interceptor
+    } finally {
+      setIsAcceptingAnswer(null);
+    }
+  };
+
+  const handleSubmitAnswer = async () => {
+    if (!session?.accessToken) {
+      toast.error("Please log in to answer", "You need to be logged in to post answers");
+      return;
+    }
+
+    if (!newAnswer.trim()) {
+      toast.error("Answer cannot be empty", "Please enter your answer");
+      return;
+    }
+
+    if (isSubmittingAnswer) return;
+
+    setIsSubmittingAnswer(true);
+    try {
+      const apiClient = getApiClient(session.accessToken);
+      const answerData = {
+        content: newAnswer.trim(),
+      };
+
+      const newAnswerData = await apiClient.createAnswer(questionId, answerData);
+
+      // Add the new answer to the local state
+      setQuestionData(prev => prev ? {
+        ...prev,
+        answers: [...prev.answers, newAnswerData],
+        answer_count: prev.answer_count + 1
+      } : null);
+
+      // Clear the form
+      setNewAnswer("");
+      toast.success("Answer posted", "Your answer has been posted successfully");
+    } catch (error) {
+      console.error("Failed to post answer:", error);
+      // Error toast is handled by axios interceptor
+    } finally {
+      setIsSubmittingAnswer(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -252,30 +326,53 @@ export default function QuestionDetailPage() {
                     userVote={answer.user_vote}
                     createdAt={answer.created_at}
                     isAccepted={answer.is_accepted}
+                    questionAuthorId={questionData.author.email}
+                    questionId={questionData.question_id}
                     onVote={(type) => handleAnswerVote(answer.id, type)}
+                    onAccept={() => handleAcceptAnswer(answer.id)}
                   />
                 ))}
               </div>
             </div>
 
             {/* Submit Answer */}
-            <Card className="shadow-none bg-foreground-50 outline-1 outline-foreground-100 rounded-2xl" id="comments">
-              <CardHeader className="pb-4">
-                <h3 className="text-lg font-semibold">Your Answer</h3>
-              </CardHeader>
-              <CardContent className="space-y-4 pt-0">
-                <RichTextEditor
-                  content={newAnswer}
-                  onChange={setNewAnswer}
-                  placeholder="Write your answer here..."
-                />
-                <div className="flex justify-end">
-                  <Button radius="full" color="primary">
-                    Post Your Answer
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+            {session?.accessToken ? (
+              <Card className="shadow-none bg-foreground-50 outline-1 outline-foreground-100 rounded-2xl">
+                <CardHeader className="pb-4">
+                  <h3 className="text-lg font-semibold">Your Answer</h3>
+                </CardHeader>
+                <CardContent className="space-y-4 pt-0">
+                  <RichTextEditor
+                    content={newAnswer}
+                    onChange={setNewAnswer}
+                    placeholder="Write your answer here..."
+                  />
+                  <div className="flex justify-end">
+                    <Button
+                      radius="full"
+                      color="primary"
+                      onPress={handleSubmitAnswer}
+                      isDisabled={isSubmittingAnswer || !newAnswer.trim()}
+                    >
+                      {isSubmittingAnswer ? "Posting..." : "Post Your Answer"}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="shadow-none bg-foreground-50 outline-1 outline-foreground-100 rounded-2xl">
+                <CardContent className="p-6 text-center">
+                  <p className="text-muted-foreground mb-4">
+                    Please log in to post an answer
+                  </p>
+                  <Link href="/auth/login">
+                    <Button radius="full" color="primary">
+                      Log In to Answer
+                    </Button>
+                  </Link>
+                </CardContent>
+              </Card>
+            )}
           </div>
 
           {/* Sidebar */}

@@ -9,8 +9,6 @@ import type {
   Answer,
   AnswerCreateRequest,
   AnswerUpdateRequest,
-  Comment,
-  CommentCreateRequest,
   VoteRequest,
   Notification,
   NotificationCount,
@@ -156,15 +154,7 @@ class ApiClient {
     return response.data;
   }
 
-  // Comments endpoints
-  async createComment(answerId: string, data: CommentCreateRequest): Promise<Comment> {
-    const response = await this.client.post<Comment>(`/qa/answers/${answerId}/comments`, data);
-    return response.data;
-  }
 
-  async deleteComment(id: string): Promise<void> {
-    await this.client.delete(`/qa/comments/${id}`);
-  }
 
   // Notifications endpoints
   async getNotifications(params?: NotificationFilterRequest): Promise<Notification[]> {

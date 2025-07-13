@@ -45,7 +45,7 @@ export function ProfilePage() {
           ...profileData,
           picture: getImageUrl(profileData.picture),
         };
-        
+
         setProfile(profileWithImage);
         setFormData({
           name: profileData.name || "",
@@ -169,7 +169,7 @@ export function ProfilePage() {
                     type="email"
                     value={profile.email}
                     disabled
-                    className="bg-gray-50"
+                    className="bg-foreground-400"
                   />
                   <p className="text-xs text-gray-500">Email cannot be changed</p>
                 </div>

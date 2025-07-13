@@ -162,6 +162,7 @@ async def create_answer(
         author_id=current_user.user_id,
         author_name=current_user.name,
         author_email=current_user.email,
+        author_picture=current_user.picture,
     )
 
     if not answer:
@@ -264,46 +265,7 @@ async def accept_answer(
     return {"message": "Answer accepted successfully"}
 
 
-@router.post(
-    "/answers/{answer_id}/comments",
-    response_model=CommentModel,
-    status_code=status.HTTP_201_CREATED,
-)
-async def create_comment(
-    answer_id: str,
-    comment_data: CommentCreateRequest,
-    current_user: CurrentUserModel = Depends(require_role(UserRole.USER)),
-) -> CommentModel:
-    """Create a comment on an answer."""
-    comment = await qa_service.create_comment(
-        answer_id=answer_id,
-        comment_data=comment_data,
-        author_id=current_user.user_id,
-        author_name=current_user.name,
-        author_email=current_user.email,
-    )
 
-    if not comment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Answer not found"
-        )
-
-    return comment
-
-
-@router.delete("/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_comment(
-    comment_id: str,
-    current_user: CurrentUserModel = Depends(require_role(UserRole.ADMIN)),
-):
-    """Delete a comment (only by the author)."""
-    success = await qa_service.delete_comment(comment_id, current_user.user_id)
-
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Comment not found or not authorized to delete",
-        )
 
 
 # Notification endpoints
@@ -448,21 +410,7 @@ async def admin_delete_answer(
     return {"message": f"Answer {answer_id} deleted by admin {current_user.email}"}
 
 
-@router.delete("/admin/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def admin_delete_comment(
-    comment_id: str,
-    current_user: CurrentUserModel = Depends(require_role(UserRole.ADMIN)),
-):
-    """Admin endpoint to delete any comment."""
-    success = await qa_service.admin_delete_comment(comment_id)
 
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Comment not found",
-        )
-
-    return {"message": f"Comment {comment_id} deleted by admin {current_user.email}"}
 
 
 @router.get("/admin/questions/{question_id}/full", response_model=QuestionModel)

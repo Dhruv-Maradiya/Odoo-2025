@@ -83,18 +83,6 @@ export interface Answer {
     created_at: string;
     updated_at: string;
     user_vote?: "upvote" | "downvote" | null;
-    comments: Comment[];
-}
-
-export interface Comment {
-    id: string;
-    answer_id: string;
-    content: string;
-    author: {
-        name: string; email: string; picture: string
-    }
-    created_at: string;
-    updated_at: string;
 }
 
 export interface QuestionWithAnswers extends Question {
@@ -126,10 +114,6 @@ export interface AnswerCreateRequest {
 export interface AnswerUpdateRequest {
     content?: string;
     images?: string[];
-}
-
-export interface CommentCreateRequest {
-    content: string;
 }
 
 export interface VoteRequest {

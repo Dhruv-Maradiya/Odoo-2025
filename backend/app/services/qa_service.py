@@ -11,8 +11,6 @@ from app.models.qa_models import (
     AnswerCreateRequest,
     AnswerModel,
     AnswerUpdateRequest,
-    CommentCreateRequest,
-    CommentModel,
     NotificationModel,
     NotificationType,
     QuestionAuthorModel,
@@ -38,7 +36,6 @@ class QAService:
         self.questions = self.db.get_collection("questions")
         self.answers = self.db.get_collection("answers")
         self.votes = self.db.get_collection("votes")
-        self.comments = self.db.get_collection("comments")
         self.notifications = self.db.get_collection("notifications")
         self.tags = self.db.get_collection("tags")
         self.user_stats = self.db.get_collection("user_stats")
@@ -115,6 +112,9 @@ class QAService:
         # Get answers with comments and votes
         answers = await self._get_question_answers(question_id, user_id)
 
+        # Calculate actual answer count
+        actual_answer_count = await self.answers.count_documents({"question_id": question_id})
+
         return QuestionModel(
             question_id=str(question_doc["_id"]),
             author=author,
@@ -123,7 +123,7 @@ class QAService:
             tags=question_doc["tags"],
             images=question_doc.get("images", []),
             view_count=question_doc["view_count"],
-            answer_count=question_doc["answer_count"],
+            answer_count=actual_answer_count,
             has_accepted_answer=question_doc["has_accepted_answer"],
             vote_count=question_doc.get("vote_count", 0),
             user_vote=user_vote,
@@ -185,7 +185,6 @@ class QAService:
         # Delete related data
         await self.answers.delete_many({"question_id": question_id})
         await self.votes.delete_many({"question_id": question_id})
-        await self.comments.delete_many({"question_id": question_id})
         await self.notifications.delete_many({"related_id": question_id})
 
         # Delete from ChromaDB
@@ -249,6 +248,9 @@ class QAService:
                     if vote_doc:
                         user_vote = vote_doc["vote_type"]
 
+                # Calculate actual answer count
+                actual_answer_count = await self.answers.count_documents({"question_id": str(doc["_id"])})
+                
                 questions.append(
                     QuestionListModel(
                         question_id=str(doc["_id"]),
@@ -256,7 +258,7 @@ class QAService:
                         title=doc["title"],
                         tags=doc["tags"],
                         view_count=doc["view_count"],
-                        answer_count=doc["answer_count"],
+                        answer_count=actual_answer_count,
                         has_accepted_answer=doc["has_accepted_answer"],
                         vote_count=doc.get("vote_count", 0),
                         user_vote=user_vote,
@@ -271,6 +273,7 @@ class QAService:
             limit=search_request.limit,
             has_next=skip + search_request.limit < total,
             has_prev=search_request.page > 1,
+            answer_count={search_request.answer_count}
         )
 
     async def _semantic_search_questions(
@@ -345,6 +348,9 @@ class QAService:
                         if vote_doc:
                             user_vote = vote_doc["vote_type"]
 
+                    # Calculate actual answer count
+                    actual_answer_count = await self.answers.count_documents({"question_id": str(doc["_id"])})
+                    
                     questions.append(
                         QuestionListModel(
                             question_id=str(doc["_id"]),
@@ -352,7 +358,7 @@ class QAService:
                             title=doc["title"],
                             tags=doc["tags"],
                             view_count=doc["view_count"],
-                            answer_count=doc["answer_count"],
+                            answer_count=actual_answer_count,
                             has_accepted_answer=doc["has_accepted_answer"],
                             vote_count=doc.get("vote_count", 0),
                             user_vote=user_vote,
@@ -378,14 +384,15 @@ class QAService:
         author_id: str,
         author_name: str,
         author_email: str,
+        author_picture:Optional[str] = None
     ) -> Optional[AnswerModel]:
         """Create an answer to a question."""
         # Check if question exists
-        question = await self.questions.find_one({"_id": question_id})
+        question = await self.questions.find_one({"_id": ObjectId(question_id)})
         if not question:
             return None
 
-        answer_id = str(uuid.uuid4())
+        answer_id = ObjectId()
         now = datetime.now(timezone.utc)
 
         answer_doc = {
@@ -406,7 +413,7 @@ class QAService:
 
         # Add to ChromaDB for semantic search
         await chromadb_service.add_answer(
-            answer_id=answer_id,
+            answer_id=str(answer_id),
             question_id=question_id,
             content=answer_data.content,
             author_id=author_id,
@@ -431,7 +438,25 @@ class QAService:
                 related_id=question_id,
             )
 
-        return await self._get_answer_by_id(answer_id, user_id=user_id)
+        # return await self._get_answer_by_id(answer_id, user_id=user_id)
+        return AnswerModel(
+            answer_id=str(answer_id),
+            question_id=question_id,
+            content=answer_data.content,
+            author=QuestionAuthorModel(
+                user_id=author_id,
+                name=author_name,
+                email=author_email,
+                picture=author_picture,
+            ),
+            created_at=now,
+            updated_at=None,
+            vote_count=0,
+            upvotes=0,
+            downvotes=0,
+            is_accepted=False,
+            user_vote=None,
+        )
 
     async def vote_answer(
         self, answer_id: str, vote_data: VoteRequest, user_id: str
@@ -691,7 +716,6 @@ class QAService:
 
         # Delete related data
         await self.votes.delete_many({"answer_id": answer_id})
-        await self.comments.delete_many({"answer_id": answer_id})
         await self.notifications.delete_many({"related_id": answer_id})
 
         # Delete from ChromaDB
@@ -735,77 +759,7 @@ class QAService:
 
         return False
 
-    async def create_comment(
-        self,
-        answer_id: str,
-        comment_data: CommentCreateRequest,
-        author_id: str,
-        author_name: str,
-        author_email: str,
-        author_picture: str,
-    ) -> Optional[CommentModel]:
-        """Create a comment on an answer."""
-        # Verify answer exists
-        answer_doc = await self.answers.find_one({"_id": answer_id})
-        if not answer_doc:
-            return None
 
-        comment_id = str(uuid.uuid4())
-        comment_doc = {
-            "_id": comment_id,
-            "answer_id": answer_id,
-            "author_id": author_id,
-            "content": comment_data.content,
-            "created_at": datetime.now(timezone.utc),
-        }
-
-        await self.comments.insert_one(comment_doc)
-
-        # Create notification for answer author
-        if answer_doc["author_id"] != author_id:
-            await self._create_notification(
-                user_id=answer_doc["author_id"],
-                notification_type=NotificationType.ANSWER_COMMENTED,
-                title="New comment on your answer",
-                message=f"{author_name} commented on your answer",
-                related_id=answer_id,
-            )
-
-        # Return the comment
-        author = QuestionAuthorModel(
-            user_id=author_id,
-            name=author_name,
-            email=author_email,
-            picture=author_picture,
-        )
-
-        return CommentModel(
-            comment_id=comment_id,
-            answer_id=answer_id,
-            author=author,
-            content=comment_data.content,
-            created_at=datetime.now(timezone.utc),
-        )
-
-    async def delete_comment(self, comment_id: str, user_id: str) -> bool:
-        """Delete a comment (only by the author)."""
-        comment_doc = await self.comments.find_one(
-            {"_id": comment_id, "author_id": user_id}
-        )
-        if not comment_doc:
-            return False
-
-        result = await self.comments.delete_one({"_id": comment_id})
-        return result.deleted_count > 0
-
-    async def admin_delete_comment(self, comment_id: str) -> bool:
-        """Admin delete: Delete any comment regardless of authorship."""
-        comment_doc = await self.comments.find_one({"_id": comment_id})
-        if not comment_doc:
-            return False
-
-        result = await self.comments.delete_one({"_id": comment_id})
-        return result.deleted_count > 0
 
     async def admin_bulk_delete_questions(
         self, question_ids: List[str]
@@ -875,7 +829,6 @@ class QAService:
         # Basic counts
         total_questions = await self.questions.count_documents({})
         total_answers = await self.answers.count_documents({})
-        total_comments = await self.comments.count_documents({})
         total_votes = await self.votes.count_documents({})
 
         # Today's activity
@@ -883,9 +836,6 @@ class QAService:
             {"created_at": {"$gte": today_start}}
         )
         answers_today = await self.answers.count_documents(
-            {"created_at": {"$gte": today_start}}
-        )
-        comments_today = await self.comments.count_documents(
             {"created_at": {"$gte": today_start}}
         )
 
@@ -913,7 +863,6 @@ class QAService:
             "overview": {
                 "total_questions": total_questions,
                 "total_answers": total_answers,
-                "total_comments": total_comments,
                 "total_users": total_users,
                 "total_votes": total_votes,
                 "flagged_questions": flagged_questions,
@@ -921,7 +870,6 @@ class QAService:
             "activity": {
                 "questions_today": questions_today,
                 "answers_today": answers_today,
-                "comments_today": comments_today,
                 "new_users_today": new_users_today,
             },
             "top_tags": [
@@ -991,8 +939,10 @@ class QAService:
                     if vote_doc:
                         user_vote = vote_doc["vote_type"]
 
+                
+                
                 answer = AnswerModel(
-                    answer_id=doc["_id"],
+                    answer_id=str(doc["_id"]),
                     question_id=doc["question_id"],
                     content=doc["content"],
                     author=author,
@@ -1003,7 +953,7 @@ class QAService:
                     downvotes=doc.get("downvotes", 0),
                     is_accepted=doc.get("is_accepted", False),
                     user_vote=user_vote,
-                    comments=[],  # Comments would be loaded separately if needed
+    
                 )
                 answers.append(answer)
 
@@ -1028,6 +978,8 @@ class QAService:
             if vote_doc:
                 user_vote = vote_doc["vote_type"]
 
+
+        
         return AnswerModel(
             answer_id=doc["_id"],
             question_id=doc["question_id"],
@@ -1040,30 +992,10 @@ class QAService:
             downvotes=doc.get("downvotes", 0),
             is_accepted=doc.get("is_accepted", False),
             user_vote=user_vote,
-            comments=[],  # Comments would be loaded separately if needed
+            comments=comments,
         )
 
-    async def _get_answer_comments(self, answer_id: str) -> List[CommentModel]:
-        """Get comments for an answer."""
-        cursor = self.comments.find({"answer_id": answer_id}).sort("created_at", 1)
-        comment_docs = await cursor.to_list(length=None)
 
-        comments = []
-        for doc in comment_docs:
-            author = await self._get_user_info(doc["author_id"])
-            if author:
-                comments.append(
-                    CommentModel(
-                        comment_id=doc["_id"],
-                        answer_id=doc["answer_id"],
-                        author=author,
-                        content=doc["content"],
-                        created_at=doc["created_at"],
-                        updated_at=doc.get("updated_at"),
-                    )
-                )
-
-        return comments
 
     async def _create_notification(
         self,

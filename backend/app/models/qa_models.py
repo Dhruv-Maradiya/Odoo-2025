@@ -4,6 +4,7 @@ Q&A system models for questions, answers, votes, and notifications.
 
 from datetime import datetime
 from enum import Enum
+from operator import ge
 from typing import List, Optional
 
 from pydantic import BaseModel, Field, validator
@@ -214,6 +215,7 @@ class QuestionSearchRequest(BaseModel):
     order: Optional[str] = "desc"
     page: int = Field(default=1, ge=1)
     limit: int = Field(default=20, ge=1, le=100)
+    answer_count:int =Field(default=0,ge=0,description="Number of answers (comments)")
 
     @validator("sort_by")
     def validate_sort_by(cls, v):

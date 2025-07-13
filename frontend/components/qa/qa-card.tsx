@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@heroui/react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowDown, ArrowUp, CheckCircle, MessageSquare } from "lucide-react";
+import { ArrowDown, ArrowUp, CheckCircle, Check } from "lucide-react";
 import { useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { getApiClient } from "@/lib/api-client";
@@ -28,7 +28,10 @@ interface QACardProps {
   userVote?: "upvote" | "downvote" | null;
   createdAt: string;
   isAccepted?: boolean;
+  questionAuthorId?: string; // For answers, to check if current user can accept
+  questionId?: string; // For answers, needed for accept functionality
   onVote?: (type: "upvote" | "downvote") => void;
+  onAccept?: () => void;
 }
 
 export function QACard({
@@ -42,10 +45,14 @@ export function QACard({
   userVote,
   createdAt,
   isAccepted = false,
+  questionAuthorId,
+  questionId,
   onVote,
+  onAccept,
 }: QACardProps) {
   const { data: session } = useSession();
   const [isVoting, setIsVoting] = useState(false);
+  const [isAccepting, setIsAccepting] = useState(false);
 
   const handleVote = async (voteType: "upvote" | "downvote") => {
     // Debug: Log session info
@@ -110,6 +117,37 @@ export function QACard({
       return dateString;
     }
   };
+
+  const handleAcceptAnswer = async () => {
+    if (!session?.accessToken) {
+      toast.error("Please log in to accept answers", "You need to be logged in to accept answers");
+      return;
+    }
+
+    if (!questionId) {
+      toast.error("Question ID is required", "Unable to accept answer");
+      return;
+    }
+
+    if (isAccepting) return;
+
+    setIsAccepting(true);
+    try {
+      const apiClient = getApiClient(session.accessToken);
+      await apiClient.acceptAnswer(questionId, id);
+      toast.success("Answer accepted", "This answer has been marked as accepted");
+      onAccept?.();
+    } catch (error) {
+      console.error("Failed to accept answer:", error);
+      // Error toast is handled by axios interceptor
+    } finally {
+      setIsAccepting(false);
+    }
+  };
+
+  const canAcceptAnswer = type === "answer" &&
+    session?.user?.email === questionAuthorId &&
+    !isAccepted;
 
   return (
     <Card className="shadow-none bg-foreground-50 outline-1 outline-foreground-100 rounded-2xl">
@@ -205,10 +243,21 @@ export function QACard({
             )}
 
             {/* Footer */}
-            <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              <div className="flex items-center gap-1">
-                <MessageSquare className="h-4 w-4" />
-                <span>0 comments</span>
+            <div className="flex items-center justify-between text-sm text-muted-foreground">
+              <div className="flex items-center gap-4">
+                {/* Accept Answer Button (only for question author) */}
+                {canAcceptAnswer && (
+                  <Button
+                    variant="flat"
+                    size="sm"
+                    color="success"
+                    startContent={<Check className="h-4 w-4" />}
+                    onPress={handleAcceptAnswer}
+                    isDisabled={isAccepting}
+                  >
+                    {isAccepting ? "Accepting..." : "Accept Answer"}
+                  </Button>
+                )}
               </div>
             </div>
           </div>
