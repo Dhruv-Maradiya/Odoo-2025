@@ -7,14 +7,13 @@ import { Button, Input } from "@heroui/react";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Header } from "@/components/layout/header";
+import { MainLayout } from "@/components/layout/main-layout";
 import { RichTextEditor } from "@/components/editor/rich-text-editor";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { BubbleChatQuestionIcon } from "@hugeicons/core-free-icons";
 import { useCurrentUser } from "@/hooks/use-auth-queries";
-import { apiClient } from "@/lib/api-client";
+import { getAuthenticatedClient as getApiClient } from "@/lib/api-client";
 import { toast } from "@/lib/toast";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -97,9 +96,14 @@ export default function AskQuestionPage() {
         tags: data.tags,
       };
 
+      const apiClient = getApiClient(session.accessToken);
+
       const newQuestion = await apiClient.createQuestion(questionData);
 
-      toast.success("Question created successfully", "Your question has been posted");
+      toast.success(
+        "Question created successfully",
+        "Your question has been posted"
+      );
 
       // Reset form and redirect to the new question
       reset();
@@ -120,9 +124,8 @@ export default function AskQuestionPage() {
 
   if (userLoading) {
     return (
-      <div className="min-h-screen bg-background">
-        <Header />
-        <main className="container mx-auto px-4 py-6 max-w-7xl">
+      <MainLayout>
+        <div className="container mx-auto px-4 py-6 max-w-7xl">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             <div className="lg:col-span-3">
               <Card className="shadow-none bg-foreground-50 outline-1 outline-foreground-100 rounded-2xl">
@@ -137,16 +140,14 @@ export default function AskQuestionPage() {
               </Card>
             </div>
           </div>
-        </main>
-      </div>
+        </div>
+      </MainLayout>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <Header />
-
-      <main className="container mx-auto px-4 py-6 max-w-7xl">
+    <MainLayout>
+      <div className="container mx-auto px-4 py-6 max-w-7xl">
         <form onSubmit={handleSubmit(onSubmit)}>
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             {/* Main Content */}
@@ -256,7 +257,9 @@ export default function AskQuestionPage() {
                       isLoading={isSubmitting}
                       disabled={isSubmitting}
                     >
-                      {isSubmitting ? "Posting Question..." : "Post Your Question"}
+                      {isSubmitting
+                        ? "Posting Question..."
+                        : "Post Your Question"}
                     </Button>
                   </div>
                 </CardContent>
@@ -267,13 +270,16 @@ export default function AskQuestionPage() {
             <div className="lg:col-span-1">
               <Card className="shadow-none bg-foreground-50 outline-1 outline-foreground-100 rounded-2xl sticky top-20">
                 <CardHeader>
-                  <CardTitle className="text-lg">Writing a good question</CardTitle>
+                  <CardTitle className="text-lg">
+                    Writing a good question
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
                     <h4 className="font-medium">Be specific</h4>
                     <p className="text-sm text-foreground-600">
-                      Include enough detail to help others understand your problem
+                      Include enough detail to help others understand your
+                      problem
                     </p>
                   </div>
                   <div className="space-y-2">
@@ -293,7 +299,7 @@ export default function AskQuestionPage() {
             </div>
           </div>
         </form>
-      </main>
-    </div>
+      </div>
+    </MainLayout>
   );
 }

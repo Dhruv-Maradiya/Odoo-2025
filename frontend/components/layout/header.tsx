@@ -9,10 +9,18 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { useSearch } from "@/contexts/search-context";
 import { useCurrentUser } from "@/hooks/use-current-user";
-import { getImageUrl } from "@/lib/backend-api";
 import { Button, Input } from "@heroui/react";
-import { LogOut, Menu, Moon, Plus, Search, Settings, Sun, User } from "lucide-react";
+import {
+  LogOut,
+  Menu,
+  Moon,
+  Search,
+  Settings,
+  Sun,
+  User
+} from "lucide-react";
 import { signOut } from "next-auth/react";
 import { useTheme } from "next-themes";
 import Link from "next/link";
@@ -23,8 +31,8 @@ interface HeaderProps { }
 export function Header({ }: HeaderProps) {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const { user, isLoading, isAuthenticated } = useCurrentUser();
+  const { searchQuery, setSearchQuery } = useSearch();
 
   useEffect(() => {
     setMounted(true);
@@ -85,6 +93,7 @@ export function Header({ }: HeaderProps) {
           <div className="flex items-center gap-2 md:gap-4">
             {/* Mobile Search */}
             <Button variant="ghost" isIconOnly className="md:hidden">
+            <Button variant="ghost" isIconOnly className="md:hidden">
               <Search className="h-5 w-5" />
             </Button>
 
@@ -100,7 +109,8 @@ export function Header({ }: HeaderProps) {
 
             <Button
               variant="flat"
-              isIconOnly onPress={() => setTheme(theme === "dark" ? "light" : "dark")}
+              isIconOnly
+              onPress={() => setTheme(theme === "dark" ? "light" : "dark")}
               size="sm"
               disabled={!mounted}
             >
@@ -149,6 +159,16 @@ export function Header({ }: HeaderProps) {
               </>
             ) : (
               <div className="flex items-center gap-2">
+                <Link href="/auth/login">
+                  <Button size="sm" variant="bordered" className="font-bold">
+                    Login
+                  </Button>
+                </Link>
+                <Link href="/auth/register">
+                  <Button size="sm" color="primary" className="font-bold">
+                    Register
+                  </Button>
+                </Link>
                 <Link href="/auth/login">
                   <Button size="sm" variant="bordered" className="font-bold">
                     Login

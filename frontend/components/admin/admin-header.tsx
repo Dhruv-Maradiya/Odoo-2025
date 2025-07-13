@@ -1,9 +1,9 @@
 "use client";
 
-import { Button } from "@heroui/react";
+import { Button } from "@/components/ui/button";
 import { LogOut, Settings } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 export function AdminHeader() {
   const { data: session } = useSession();
@@ -13,9 +13,12 @@ export function AdminHeader() {
       await signOut({
         callbackUrl: "/",
       });
-      toast.success("Logged out successfully");
+      toast.success(
+        "Logged out successfully",
+        "You have been logged out of your admin session"
+      );
     } catch (error) {
-      toast.error("Failed to logout");
+      toast.error("Failed to logout", "Please try again");
     }
   };
 
@@ -39,12 +42,8 @@ export function AdminHeader() {
           </p>
         </div>
 
-        <Button
-          color="danger"
-          variant="light"
-          startContent={<LogOut className="h-4 w-4" />}
-          onClick={handleLogout}
-        >
+        <Button variant="destructive" size="sm" onClick={handleLogout}>
+          <LogOut className="h-4 w-4 mr-2" />
           Logout
         </Button>
       </div>

@@ -24,6 +24,8 @@ from app.models.qa_models import (
     VoteType,
 )
 from app.services.chromadb_service import chromadb_service
+from bson import ObjectId
+from fastapi import BackgroundTasks
 from pymongo import DESCENDING
 from bson import ObjectId
 
@@ -81,7 +83,10 @@ class QAService:
         return await self.get_question_by_id(str(test.inserted_id))
 
     async def get_question_by_id(
-        self, question_id: str, increment_view: bool = False, user_id: str = None
+        self,
+        question_id: str,
+        increment_view: bool = False,
+        user_id: Optional[str] = None,
     ) -> Optional[QuestionModel]:
         """Get a question by ID with all answers and comments."""
         if increment_view:
@@ -112,9 +117,6 @@ class QAService:
         # Get answers with comments and votes
         answers = await self._get_question_answers(question_id, user_id)
 
-        # Calculate actual answer count
-        actual_answer_count = await self.answers.count_documents({"question_id": question_id})
-
         return QuestionModel(
             question_id=str(question_doc["_id"]),
             author=author,
@@ -125,6 +127,7 @@ class QAService:
             view_count=question_doc["view_count"],
             answer_count=actual_answer_count,
             has_accepted_answer=question_doc["has_accepted_answer"],
+            is_flagged=question_doc.get("is_flagged", False),
             vote_count=question_doc.get("vote_count", 0),
             user_vote=user_vote,
             answers=answers,
@@ -195,16 +198,19 @@ class QAService:
         return result.deleted_count > 0
 
     async def search_questions(
-        self, search_request: QuestionSearchRequest, user_id: str = None
+        self, search_request: QuestionSearchRequest, user_id: Optional[str]
     ) -> QuestionSearchResponse:
         """Search questions with filters and pagination."""
 
-        # Use semantic search if there's a query
-        if search_request.query:
-            return await self._semantic_search_questions(search_request, user_id)
-
-        # Traditional MongoDB search for non-query searches
+        # Build search filters
         filters: Dict[str, Any] = {}
+
+        # Text search in title or description
+        if search_request.query:
+            filters["$or"] = [
+                {"title": {"$regex": search_request.query, "$options": "i"}},
+                {"description": {"$regex": search_request.query, "$options": "i"}},
+            ]
 
         if search_request.tags:
             filters["tags"] = {"$in": search_request.tags}
@@ -248,9 +254,6 @@ class QAService:
                     if vote_doc:
                         user_vote = vote_doc["vote_type"]
 
-                # Calculate actual answer count
-                actual_answer_count = await self.answers.count_documents({"question_id": str(doc["_id"])})
-                
                 questions.append(
                     QuestionListModel(
                         question_id=str(doc["_id"]),
@@ -258,8 +261,9 @@ class QAService:
                         title=doc["title"],
                         tags=doc["tags"],
                         view_count=doc["view_count"],
-                        answer_count=actual_answer_count,
+                        answer_count=doc["answer_count"],
                         has_accepted_answer=doc["has_accepted_answer"],
+                        is_flagged=doc.get("is_flagged", False),
                         vote_count=doc.get("vote_count", 0),
                         user_vote=user_vote,
                         created_at=doc["created_at"],
@@ -273,11 +277,10 @@ class QAService:
             limit=search_request.limit,
             has_next=skip + search_request.limit < total,
             has_prev=search_request.page > 1,
-            answer_count={search_request.answer_count}
         )
 
     async def _semantic_search_questions(
-        self, search_request: QuestionSearchRequest, user_id: str = None
+        self, search_request: QuestionSearchRequest, user_id: Optional[str]
     ) -> QuestionSearchResponse:
         """Perform semantic search using ChromaDB."""
 
@@ -348,9 +351,6 @@ class QAService:
                         if vote_doc:
                             user_vote = vote_doc["vote_type"]
 
-                    # Calculate actual answer count
-                    actual_answer_count = await self.answers.count_documents({"question_id": str(doc["_id"])})
-                    
                     questions.append(
                         QuestionListModel(
                             question_id=str(doc["_id"]),
@@ -384,7 +384,6 @@ class QAService:
         author_id: str,
         author_name: str,
         author_email: str,
-        author_picture:Optional[str] = None
     ) -> Optional[AnswerModel]:
         """Create an answer to a question."""
         # Check if question exists
@@ -438,25 +437,7 @@ class QAService:
                 related_id=question_id,
             )
 
-        # return await self._get_answer_by_id(answer_id, user_id=user_id)
-        return AnswerModel(
-            answer_id=str(answer_id),
-            question_id=question_id,
-            content=answer_data.content,
-            author=QuestionAuthorModel(
-                user_id=author_id,
-                name=author_name,
-                email=author_email,
-                picture=author_picture,
-            ),
-            created_at=now,
-            updated_at=None,
-            vote_count=0,
-            upvotes=0,
-            downvotes=0,
-            is_accepted=False,
-            user_vote=None,
-        )
+        return await self._get_answer_by_id(answer_id, user_id=user_id)
 
     async def vote_answer(
         self, answer_id: str, vote_data: VoteRequest, user_id: str
@@ -759,50 +740,116 @@ class QAService:
 
         return False
 
+    async def create_comment(
+        self,
+        answer_id: str,
+        comment_data: CommentCreateRequest,
+        author_id: str,
+        author_name: str,
+        author_email: str,
+        author_picture: str,
+    ) -> Optional[CommentModel]:
+        """Create a comment on an answer."""
+        # Verify answer exists
+        answer_doc = await self.answers.find_one({"_id": answer_id})
+        if not answer_doc:
+            return None
 
-
-    async def admin_bulk_delete_questions(
-        self, question_ids: List[str]
-    ) -> Dict[str, Any]:
-        """Admin bulk delete: Delete multiple questions at once."""
-        deleted_count = 0
-        failed_ids = []
-
-        for question_id in question_ids:
-            try:
-                success = await self.admin_delete_question(question_id)
-                if success:
-                    deleted_count += 1
-                else:
-                    failed_ids.append(question_id)
-            except Exception:
-                failed_ids.append(question_id)
-
-        return {
-            "total_requested": len(question_ids),
-            "deleted_count": deleted_count,
-            "failed_count": len(failed_ids),
-            "failed_ids": failed_ids,
+        comment_id = str(uuid.uuid4())
+        comment_doc = {
+            "_id": comment_id,
+            "answer_id": answer_id,
+            "author_id": author_id,
+            "content": comment_data.content,
+            "created_at": datetime.now(timezone.utc),
         }
 
-    async def admin_flag_question(
-        self, question_id: str, reason: str, admin_id: str
-    ) -> bool:
-        """Admin flag: Flag a question for review."""
-        now = datetime.now(timezone.utc)
+        await self.comments.insert_one(comment_doc)
 
-        result = await self.questions.update_one(
-            {"_id": question_id},
-            {
-                "$set": {
-                    "is_flagged": True,
-                    "flag_reason": reason,
-                    "flagged_by": admin_id,
-                    "flagged_at": now,
-                }
-            },
+        # Create notification for answer author
+        if answer_doc["author_id"] != author_id:
+            await self._create_notification(
+                user_id=answer_doc["author_id"],
+                notification_type=NotificationType.ANSWER_COMMENTED,
+                title="New comment on your answer",
+                message=f"{author_name} commented on your answer",
+                related_id=answer_id,
+            )
+
+        # Return the comment
+        author = QuestionAuthorModel(
+            user_id=author_id,
+            name=author_name,
+            email=author_email,
+            picture=author_picture,
         )
-        return result.modified_count > 0
+
+        return CommentModel(
+            comment_id=comment_id,
+            answer_id=answer_id,
+            author=author,
+            content=comment_data.content,
+            created_at=datetime.now(timezone.utc),
+        )
+
+    async def delete_comment(self, comment_id: str, user_id: str) -> bool:
+        """Delete a comment (only by the author)."""
+        comment_doc = await self.comments.find_one(
+            {"_id": comment_id, "author_id": user_id}
+        )
+        if not comment_doc:
+            return False
+
+        result = await self.comments.delete_one({"_id": comment_id})
+        return result.deleted_count > 0
+
+    async def admin_delete_question(self, question_id: str) -> bool:
+        """Admin delete: Delete any question (with all related data)."""
+        try:
+            # Delete all related answers
+            await self.answers.delete_many({"question_id": question_id})
+
+            # Delete all related comments (for answers of this question)
+            answer_ids = []
+            async for answer in self.answers.find({"question_id": question_id}):
+                answer_ids.append(str(answer["_id"]))
+
+            if answer_ids:
+                await self.comments.delete_many({"answer_id": {"$in": answer_ids}})
+
+            # Delete all votes for the question and its answers
+            await self.votes.delete_many({"question_id": question_id})
+
+            # Delete the question itself
+            result = await self.questions.delete_one({"_id": ObjectId(question_id)})
+
+            return result.deleted_count > 0
+        except Exception:
+            return False
+
+    async def admin_delete_answer(self, answer_id: str) -> bool:
+        """Admin delete: Delete any answer (with all related data)."""
+        try:
+            # Delete all related comments
+            await self.comments.delete_many({"answer_id": answer_id})
+
+            # Delete all votes for the answer
+            await self.votes.delete_many({"answer_id": answer_id})
+
+            # Delete the answer itself
+            result = await self.answers.delete_one({"_id": answer_id})
+
+            return result.deleted_count > 0
+        except Exception:
+            return False
+
+    async def admin_delete_comment(self, comment_id: str) -> bool:
+        """Admin delete: Delete any comment."""
+        try:
+            result = await self.comments.delete_one({"_id": comment_id})
+            return result.deleted_count > 0
+        except Exception:
+            return False
 
     async def admin_unflag_question(self, question_id: str) -> bool:
         """Admin unflag: Remove flag from a question."""
@@ -846,9 +893,6 @@ class QAService:
             {"created_at": {"$gte": today_start}}
         )
 
-        # Flagged content
-        flagged_questions = await self.questions.count_documents({"is_flagged": True})
-
         # Top tags
         pipeline = [
             {"$unwind": "$tags"},
@@ -865,7 +909,6 @@ class QAService:
                 "total_answers": total_answers,
                 "total_users": total_users,
                 "total_votes": total_votes,
-                "flagged_questions": flagged_questions,
             },
             "activity": {
                 "questions_today": questions_today,
@@ -878,34 +921,12 @@ class QAService:
             "generated_at": now,
         }
 
-    async def remove_vote(self, item_id: str, user_id: str) -> bool:
-        """Remove a vote by a user on a question or answer."""
-        result = await self.votes.delete_one(
-            {
-                "user_id": user_id,
-                "$or": [{"question_id": item_id}, {"answer_id": item_id}],
-            }
-        )
-        return result.deleted_count > 0
-
     async def mark_all_notifications_read(self, user_id: str) -> int:
         """Mark all notifications as read for a user."""
         result = await self.notifications.update_many(
             {"user_id": user_id, "is_read": False}, {"$set": {"is_read": True}}
         )
         return result.modified_count
-
-    async def get_similar_questions(
-        self, question_id: str, limit: int = 5
-    ) -> List[QuestionModel]:
-        """Get similar questions based on content similarity."""
-        # For now, return an empty list - would require implementing semantic similarity
-        return []
-
-    async def semantic_search_all(self, query: str, limit: int = 20) -> List[dict]:
-        """Perform semantic search across questions and answers."""
-        # For now, return an empty list - would require implementing ChromaDB search
-        return []
 
     # Helper methods
     async def _get_user_info(self, user_id: str) -> Optional[QuestionAuthorModel]:
@@ -922,7 +943,9 @@ class QAService:
             )
         return None
 
-    async def _get_question_answers(self, question_id: str, user_id: str = None) -> List[AnswerModel]:
+    async def _get_question_answers(
+        self, question_id: str, user_id: Optional[str] = None
+    ) -> List[AnswerModel]:
         """Get all answers for a question."""
         cursor = self.answers.find({"question_id": question_id}).sort("created_at", 1)
         answers = []
@@ -939,8 +962,6 @@ class QAService:
                     if vote_doc:
                         user_vote = vote_doc["vote_type"]
 
-                
-                
                 answer = AnswerModel(
                     answer_id=str(doc["_id"]),
                     question_id=doc["question_id"],
@@ -953,13 +974,15 @@ class QAService:
                     downvotes=doc.get("downvotes", 0),
                     is_accepted=doc.get("is_accepted", False),
                     user_vote=user_vote,
-    
+                    comments=[],  # Comments would be loaded separately if needed
                 )
                 answers.append(answer)
 
         return answers
 
-    async def _get_answer_by_id(self, answer_id: str, user_id: str = None) -> Optional[AnswerModel]:
+    async def _get_answer_by_id(
+        self, answer_id: str, user_id: Optional[str] = None
+    ) -> Optional[AnswerModel]:
         """Get an answer by ID."""
         doc = await self.answers.find_one({"_id": answer_id})
         if not doc:
@@ -978,8 +1001,6 @@ class QAService:
             if vote_doc:
                 user_vote = vote_doc["vote_type"]
 
-
-        
         return AnswerModel(
             answer_id=doc["_id"],
             question_id=doc["question_id"],
@@ -992,10 +1013,30 @@ class QAService:
             downvotes=doc.get("downvotes", 0),
             is_accepted=doc.get("is_accepted", False),
             user_vote=user_vote,
-            comments=comments,
+            comments=[],  # Comments would be loaded separately if needed
         )
 
+    async def _get_answer_comments(self, answer_id: str) -> List[CommentModel]:
+        """Get comments for an answer."""
+        cursor = self.comments.find({"answer_id": answer_id}).sort("created_at", 1)
+        comment_docs = await cursor.to_list(length=None)
 
+        comments = []
+        for doc in comment_docs:
+            author = await self._get_user_info(doc["author_id"])
+            if author:
+                comments.append(
+                    CommentModel(
+                        comment_id=doc["_id"],
+                        answer_id=doc["answer_id"],
+                        author=author,
+                        content=doc["content"],
+                        created_at=doc["created_at"],
+                        updated_at=doc.get("updated_at"),
+                    )
+                )
+
+        return comments
 
     async def _create_notification(
         self,
@@ -1007,7 +1048,6 @@ class QAService:
     ):
         """Create a notification."""
         notification_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
 
         notification_doc = {
             "_id": notification_id,
@@ -1016,8 +1056,8 @@ class QAService:
             "title": title,
             "message": message,
             "related_id": related_id,
-            "is_read": False,
             "created_at": datetime.now(timezone.utc),
+            "is_read": False,
         }
 
         await self.notifications.insert_one(notification_doc)
@@ -1043,31 +1083,131 @@ class QAService:
     async def get_similar_questions(
         self, question_id: str, limit: int = 5
     ) -> List[QuestionListModel]:
-        """Get questions similar to the given question using semantic search."""
-        similar_results = await chromadb_service.get_similar_questions(
-            question_id=question_id, limit=limit
-        )
+        """Get questions similar to the given question using semantic search with fallback."""
+        try:
+            # First try ChromaDB semantic search
+            similar_results = await chromadb_service.get_similar_questions(
+                question_id=question_id, limit=limit
+            )
 
-        if not similar_results:
-            return []
+            if similar_results:
+                # Get question IDs from results and convert to ObjectId
+                question_ids = [ObjectId(result["id"]) for result in similar_results]
 
-        # Get question IDs from results
-        question_ids = [result["id"] for result in similar_results]
+                # Get question documents from MongoDB
+                question_docs = await self.questions.find(
+                    {"_id": {"$in": question_ids}}
+                ).to_list(length=None)
 
-        # Get question documents from MongoDB
-        question_docs = await self.questions.find(
-            {"_id": {"$in": question_ids}}
-        ).to_list(length=None)
+                # Create a mapping for quick lookup
+                question_map = {str(doc["_id"]): doc for doc in question_docs}
 
-        # Create a mapping for quick lookup
-        question_map = {doc["_id"]: doc for doc in question_docs}
+                # Build response maintaining the similarity order
+                questions = []
+                for result in similar_results:
+                    question_id_str = result["id"]
+                    if question_id_str in question_map:
+                        doc = question_map[question_id_str]
+                        author = await self._get_user_info(doc["author_id"])
+                        if author:
+                            questions.append(
+                                QuestionListModel(
+                                    question_id=str(doc["_id"]),
+                                    author=author,
+                                    title=doc["title"],
+                                    tags=doc["tags"],
+                                    view_count=doc["view_count"],
+                                    answer_count=doc["answer_count"],
+                                    has_accepted_answer=doc["has_accepted_answer"],
+                                    created_at=doc["created_at"],
+                                )
+                            )
 
-        # Build response maintaining the similarity order
-        questions = []
-        for result in similar_results:
-            question_id = result["id"]
-            if question_id in question_map:
-                doc = question_map[question_id]
+                return questions
+
+            # Fallback: Use MongoDB text search and tag matching
+            else:
+                return await self._get_similar_questions_fallback(question_id, limit)
+
+        except Exception as e:
+            print(f"Error getting similar questions: {e}")
+            # If there's an error with ChromaDB, use fallback
+            return await self._get_similar_questions_fallback(question_id, limit)
+
+    async def _get_similar_questions_fallback(
+        self, question_id: str, limit: int = 5
+    ) -> List[QuestionListModel]:
+        """Fallback method to find similar questions using MongoDB text search and tag matching."""
+        try:
+            # Get the source question
+            source_question = await self.questions.find_one(
+                {"_id": ObjectId(question_id)}
+            )
+            if not source_question:
+                return []
+
+            # Build search criteria using tags and title words
+            search_criteria = []
+
+            # Add tag-based matching
+            if source_question.get("tags"):
+                search_criteria.append({"tags": {"$in": source_question["tags"]}})
+
+            # Add text search on title and description
+            title_words = source_question.get("title", "").split()
+            if len(title_words) > 2:
+                # Use some title words for text search
+                search_text = " ".join(title_words[:3])  # Use first 3 words
+                search_criteria.extend(
+                    [
+                        {"title": {"$regex": search_text, "$options": "i"}},
+                        {"description": {"$regex": search_text, "$options": "i"}},
+                    ]
+                )
+
+            if not search_criteria:
+                return []
+
+            # Find similar questions (exclude the source question)
+            similar_docs = (
+                await self.questions.find(
+                    {"_id": {"$ne": ObjectId(question_id)}, "$or": search_criteria}
+                )
+                .limit(limit * 2)
+                .to_list(length=None)
+            )  # Get more to filter
+
+            # Score and sort by relevance
+            scored_questions = []
+            source_tags = set(source_question.get("tags", []))
+
+            for doc in similar_docs:
+                score = 0
+                doc_tags = set(doc.get("tags", []))
+
+                # Tag overlap score
+                tag_overlap = len(source_tags.intersection(doc_tags))
+                if tag_overlap > 0:
+                    score += tag_overlap * 2  # Weight tag matches heavily
+
+                # Title similarity (simple word overlap)
+                source_title_words = set(
+                    source_question.get("title", "").lower().split()
+                )
+                doc_title_words = set(doc.get("title", "").lower().split())
+                title_overlap = len(source_title_words.intersection(doc_title_words))
+                score += title_overlap
+
+                if score > 0:  # Only include questions with some similarity
+                    scored_questions.append((doc, score))
+
+            # Sort by score and take top results
+            scored_questions.sort(key=lambda x: x[1], reverse=True)
+            top_questions = scored_questions[:limit]
+
+            # Build response
+            questions = []
+            for doc, _ in top_questions:
                 author = await self._get_user_info(doc["author_id"])
                 if author:
                     questions.append(
@@ -1083,7 +1223,11 @@ class QAService:
                         )
                     )
 
-        return questions
+            return questions
+
+        except Exception as e:
+            print(f"Error in fallback similar questions: {e}")
+            return []
 
     async def semantic_search_all(self, query: str, limit: int = 20) -> Dict[str, List]:
         """Perform semantic search across both questions and answers."""

@@ -1,17 +1,19 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
-import Link from "next/link";
 import { Header } from "@/components/layout/header";
+import { MainLayout } from "@/components/layout/main-layout";
 import { QuestionCard } from "@/components/questions/question-card";
-import { QuestionFilters } from "@/components/questions/question-filters";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { getApiClient } from "@/lib/api-client";
-import type { QuestionSearchRequest, QuestionSearchResponse } from "@/types/api";
+import type {
+  QuestionSearchRequest,
+  QuestionSearchResponse,
+} from "@/types/api";
+import { useSession } from "next-auth/react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 
 export default function HomePage() {
   const [sortBy, setSortBy] = useState("created_at");
@@ -21,7 +23,8 @@ export default function HomePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const { data: session } = useSession();
 
-  const [questionsResponse, setQuestionsResponse] = useState<QuestionSearchResponse | null>(null);
+  const [questionsResponse, setQuestionsResponse] =
+    useState<QuestionSearchResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
@@ -41,32 +44,22 @@ export default function HomePage() {
   };
 
   // Fetch questions with authentication
-  const fetchQuestions = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      const apiClient = getApiClient(session?.accessToken);
-      const result = await apiClient.getQuestions(searchParams);
-      setQuestionsResponse(result);
-    } catch (err) {
-      setError(err as Error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchQuestions();
-  }, [JSON.stringify(searchParams), session?.accessToken]);
-
-  // Refresh data when page becomes visible (user returns from another page)
-  useEffect(() => {
-    const handleFocus = () => {
-      fetchQuestions();
+    const fetchQuestions = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const apiClient = getApiClient(session?.accessToken);
+        const result = await apiClient.getQuestions(searchParams);
+        setQuestionsResponse(result);
+      } catch (err) {
+        setError(err as Error);
+      } finally {
+        setIsLoading(false);
+      }
     };
 
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
+    fetchQuestions();
   }, [JSON.stringify(searchParams), session?.accessToken]);
 
   const handleFilterToggle = (filter: string) => {
@@ -99,9 +92,8 @@ export default function HomePage() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-background">
-        <Header />
-        <main className="container mx-auto px-4 py-6 max-w-7xl">
+      <MainLayout>
+        <div className="container mx-auto px-4 py-6 max-w-7xl">
           <Alert variant="destructive">
             <AlertDescription>
               Failed to load questions. Please try again.
@@ -115,8 +107,8 @@ export default function HomePage() {
               </Button>
             </AlertDescription>
           </Alert>
-        </main>
-      </div>
+        </div>
+      </MainLayout>
     );
   }
 
@@ -125,19 +117,6 @@ export default function HomePage() {
       <Header />
 
       <main className="container mx-auto px-4 py-6 max-w-7xl">
-        {/* Header with refresh button */}
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">Questions</h1>
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={fetchQuestions}
-            disabled={isLoading}
-          >
-            {isLoading ? "Refreshing..." : "Refresh"}
-          </Button>
-        </div>
-
         {/* Questions List */}
         <div className="flex flex-col gap-3">
           {isLoading ? (

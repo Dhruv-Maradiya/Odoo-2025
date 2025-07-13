@@ -3,23 +3,15 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@heroui/react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  ArrowDown,
-  ArrowUp,
-  Eye,
-  MessageSquare,
-  CheckCircle,
-} from "lucide-react";
-import Link from "next/link";
-import { useState, useEffect } from "react";
-import { formatDistanceToNow } from "date-fns";
-import type { Question } from "@/types/api";
-import { getApiClient } from "@/lib/api-client";
-import { getImageUrl } from "@/lib/backend-api";
-import { useSession } from "next-auth/react";
+import { getAuthenticatedClient as getApiClient } from "@/lib/api-client";
 import { toast } from "@/lib/toast";
+import type { Question } from "@/types/api";
+import { Button } from "@heroui/react";
+import { formatDistanceToNow } from "date-fns";
+import { ArrowDown, ArrowUp, CheckCircle, MessageSquare } from "lucide-react";
+import { useSession } from "next-auth/react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 
 interface QuestionCardProps {
   question: Question;
@@ -47,7 +39,10 @@ export function QuestionCard({ question }: QuestionCardProps) {
 
     if (!session?.accessToken) {
       console.log("No access token found in session");
-      toast.error("Please log in to vote", "You need to be logged in to vote on questions");
+      toast.error(
+        "Please log in to vote",
+        "You need to be logged in to vote on questions"
+      );
       return;
     }
 
@@ -66,14 +61,19 @@ export function QuestionCard({ question }: QuestionCardProps) {
 
     setIsVoting(true);
     try {
-      console.log("Creating API client with token:", session.accessToken.substring(0, 20) + "...");
+      console.log(
+        "Creating API client with token:",
+        session.accessToken.substring(0, 20) + "..."
+      );
       const apiClient = getApiClient(session.accessToken);
-      const result = await apiClient.voteQuestion(question.question_id, voteTypeToSend);
+      const result = await apiClient.voteQuestion(
+        question.question_id,
+        voteTypeToSend
+      );
 
       // Update local state based on the API response
       setLocalVotes(result.vote_count);
       setLocalUserVote(result.user_vote);
-
     } catch (error) {
       console.error("Failed to vote:", error);
       // Error toast is handled by axios interceptor
@@ -99,7 +99,7 @@ export function QuestionCard({ question }: QuestionCardProps) {
     }
   };
 
-  const hasAcceptedAnswer = !!question.accepted_answer_id;
+  const hasAcceptedAnswer = question.accepted_answer_id !== undefined;
 
   return (
     <Card className="shadow-none bg-foreground-50 outline-1 outline-foreground-100 rounded-2xl group hover:bg-foreground-100 transition">
@@ -114,7 +114,8 @@ export function QuestionCard({ question }: QuestionCardProps) {
                     <>
                       <Avatar className="h-5 w-5">
                         <AvatarImage
-                          src={getImageUrl(question.author.picture) ||
+                          src={
+                            question.author.picture ||
                             "https://links.aryanranderiya.com/l/default_user"
                           }
                         />
@@ -155,36 +156,41 @@ export function QuestionCard({ question }: QuestionCardProps) {
                 {/* Meta Info */}
                 <div className="flex items-center justify-start gap-2 text-muted-foreground">
                   <div
-                    className={`flex flex-row items-center p-1 gap-2 rounded-full text-foreground ${localUserVote === "upvote"
-                      ? "bg-primary"
-                      : localUserVote === "downvote"
+                    className={`flex flex-row items-center p-1 gap-2 rounded-full text-foreground ${
+                      localUserVote === "upvote"
+                        ? "bg-primary"
+                        : localUserVote === "downvote"
                         ? "bg-violet-600"
                         : "bg-foreground-200"
-                      }`}
+                    }`}
                   >
                     <Button
                       variant="light"
                       size="sm"
                       radius="full"
-                      className={`h-8 w-8 p-0 ${localUserVote === "upvote"
-                        ? "text-white"
-                        : "text-foreground hover:text-primary"
-                        }`}
+                      className={`h-8 w-8 p-0 ${
+                        localUserVote === "upvote"
+                          ? "text-white"
+                          : "text-foreground hover:text-primary"
+                      }`}
                       isIconOnly
                       onPress={() => handleVote("upvote")}
                       isDisabled={isVoting}
                     >
                       <ArrowUp className="h-4 w-4" />
                     </Button>
-                    <span className="font-bold text-base">{localVotes || 0}</span>
+                    <span className={`font-bold text-base`}>
+                      {localVotes || 0}
+                    </span>
                     <Button
                       variant="light"
                       size="sm"
                       radius="full"
-                      className={`h-8 w-8 p-0 ${localUserVote === "downvote"
-                        ? "text-white"
-                        : "text-foreground hover:text-violet-600"
-                        }`}
+                      className={`h-8 w-8 p-0 ${
+                        localUserVote === "downvote"
+                          ? "text-white"
+                          : "text-foreground hover:text-violet-600"
+                      }`}
                       isIconOnly
                       onPress={() => handleVote("downvote")}
                       isDisabled={isVoting}
@@ -193,18 +199,16 @@ export function QuestionCard({ question }: QuestionCardProps) {
                     </Button>
                   </div>
 
-
-                  <Link href={`/question/${question.question_id}`}>
+                  <Link href={`/question/${question.question_id}#comments`}>
                     <Button
                       variant="flat"
                       radius="full"
                       className="text-base font-bold"
                     >
                       <MessageSquare className="h-4 w-4" />
-                      {question.answer_count || 0} Answer{(question.answer_count || 0) !== 1 ? 's' : ''}
+                      {question.answer_count || 0}
                     </Button>
                   </Link>
-
                 </div>
               </div>
             </div>

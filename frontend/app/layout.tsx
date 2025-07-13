@@ -5,6 +5,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { HeroUIProvider } from "@heroui/react";
 import { AuthProvider } from "@/lib/auth-provider";
+import { SearchProvider } from "@/contexts/search-context";
 import { Toaster } from "sonner";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -32,8 +33,10 @@ export default function RootLayout({
             disableTransitionOnChange
           >
             <HeroUIProvider>
-              {children}
-              <Toaster richColors />
+              <SearchProvider>
+                {children}
+                <Toaster richColors />
+              </SearchProvider>
             </HeroUIProvider>
           </ThemeProvider>
         </AuthProvider>

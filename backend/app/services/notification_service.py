@@ -84,7 +84,7 @@ class NotificationService:
 
     async def get_user_notifications(
         self, user_id: str, filters: NotificationFilterRequest
-    ) -> Optional[NotificationListResponse]:
+    ) -> NotificationListResponse:
         """Get notifications for a user with filters."""
         try:
             # Build query
@@ -152,7 +152,15 @@ class NotificationService:
             )
         except Exception as e:
             print(f"Error getting notifications: {e}")
-            return None
+            # Return empty response instead of None
+            return NotificationListResponse(
+                notifications=[],
+                total=0,
+                page=filters.page,
+                limit=filters.limit,
+                has_next=False,
+                has_prev=False,
+            )
 
     async def update_notification(
         self, notification_id: str, user_id: str, update_data: NotificationUpdateRequest

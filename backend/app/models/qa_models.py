@@ -35,6 +35,35 @@ class TextAlignment(str, Enum):
 
 
 # Request Models
+class BulkDeleteRequest(BaseModel):
+    """Request model for bulk deletion of content."""
+
+    item_ids: List[str] = Field(..., description="List of item IDs to delete")
+    item_type: str = Field(
+        ..., description="Type of items: questions, answers, comments"
+    )
+
+    @validator("item_type")
+    def validate_item_type(cls, v):
+        if v not in ["questions", "answers", "comments"]:
+            raise ValueError("item_type must be one of: questions, answers, comments")
+        return v
+
+    @validator("item_ids")
+    def validate_item_ids(cls, v):
+        if not v:
+            raise ValueError("item_ids cannot be empty")
+        return v
+
+
+class FlagContentRequest(BaseModel):
+    """Request model for flagging content."""
+
+    reason: str = Field(
+        ..., min_length=3, max_length=500, description="Reason for flagging"
+    )
+
+
 class QuestionCreateRequest(BaseModel):
     """Request model for creating a new question."""
 
@@ -161,6 +190,7 @@ class QuestionModel(BaseModel):
     vote_count: int = 0
     answer_count: int = 0
     has_accepted_answer: bool = False
+    is_flagged: bool = False
     user_vote: Optional[str] = None
     answers: List[AnswerModel] = []
     created_at: datetime
@@ -178,6 +208,7 @@ class QuestionListModel(BaseModel):
     answer_count: int = 0
     vote_count: int = 0
     has_accepted_answer: bool = False
+    is_flagged: bool = False
     user_vote: Optional[str] = None
     created_at: datetime
 
